@@ -9,6 +9,7 @@ import { FileKnowledgeStore, FileStateStore } from "../src/state.js";
 import { Orchestrator } from "../src/orchestrator.js";
 import { builtInWorkflows } from "../src/workflows.js";
 import { acquireContext } from "../src/context.js";
+import { OpenCodeAdapter } from "../src/adapters.js";
 
 test("safe tool runner captures command provenance and blocks workspace escape", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "hackon-tool-"));
@@ -19,6 +20,31 @@ test("safe tool runner captures command provenance and blocks workspace escape",
   assert.match(result.command, /^node/);
   await assert.rejects(() => runner.run({ argv: ["node", "-e", "1"], cwd: join(workspace, "..") }), /escapes workspace/);
   await assert.rejects(() => runner.run({ argv: ["rm", "-rf", "x"], cwd: workspace }), /Destructive command blocked/);
+  await assert.rejects(() => runner.run({ argv: ["mkdir", "nope"], cwd: workspace }), /Write permission required/);
+  const writable = await runner.run({ argv: ["mkdir", "allowed"], cwd: workspace, permissions: ["read", "write", "execute"] });
+  assert.equal(writable.exitCode, 0);
+  process.env.HACKON_TEST_SECRET = "must-not-leak";
+  const envResult = await runner.run({ argv: ["node", "-e", "process.stdout.write(process.env.HACKON_TEST_SECRET || 'missing')"], cwd: workspace });
+  delete process.env.HACKON_TEST_SECRET;
+  assert.equal(envResult.stdout, "missing");
+});
+
+test("OpenCode adapter rejects a read-only agent that writes", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "hackon-adapter-"));
+  const script = join(workspace, "agent.mjs");
+  await writeFile(script, "import { writeFile } from 'node:fs/promises'; await writeFile('violation.txt', 'changed');");
+  const adapter = new OpenCodeAdapter(`${process.execPath} ${script}`);
+  const result = await adapter.run({
+    objective: "read only",
+    stageId: "review",
+    role: "reviewer",
+    prompt: "Do not write",
+    workspace,
+    permissions: ["read"],
+    context: { objective: "read only", files: [], knowledge: [], warnings: [] },
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.error ?? "", /Read-only agent task modified/);
 });
 
 test("state and knowledge stores persist resumable data and retrieve related lessons", async () => {
@@ -32,9 +58,10 @@ test("state and knowledge stores persist resumable data and retrieve related les
   const persisted = await knowledge.search("credential token");
   assert.equal(persisted.some((entry) => entry.content.includes("super-secret-value")), false);
   const store = new FileStateStore(workspace);
-  const run = { id: "run-2", workflowId: "bug-fix", objective: "fix", workspace, status: "running" as const, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), stages: {}, evidence: [], selectedContext: [] };
+  const run = { id: "run-2", workflowId: "bug-fix", objective: "fix", workspace, status: "running" as const, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), stages: {}, evidence: [], selectedContext: [], stageBaselines: {} };
   await store.save(run);
   assert.deepEqual(await store.load("run-2"), run);
+  await assert.rejects(() => store.load("../escape"), /Invalid run ID/);
 });
 
 test("context labels repository instructions as untrusted and excludes generated trees", async () => {
@@ -103,8 +130,8 @@ test("resume reruns incomplete work but preserves completed stages", async () =>
       { id: "first", title: "first", dependsOn: [], writes: true, permissions: ["write"], gates: [], async execute() { runs += 1; return [evidence({ kind: "FileEvidence", producer: "test", stageId: "first", source: "memory", result: "pass", metadata: { exists: true } })]; } },
       { id: "second", title: "second", dependsOn: ["first"], writes: true, permissions: ["write"], gates: [{ id: "pass", type: "artifact_exists", blocking: true, description: "must pass" }], async execute(context) {
         runs += 1;
-        if (runs < 3) return [evidence({ kind: "FileEvidence", producer: "test", stageId: context.stage.id, source: "memory", result: "fail", metadata: { exists: false } })];
-        return [evidence({ kind: "FileEvidence", producer: "test", stageId: context.stage.id, source: "memory", result: "pass", metadata: { exists: true } })];
+        if (runs < 3) return [evidence({ kind: "FileEvidence", producer: "test", stageId: context.stage.id, source: "memory", result: "fail", verification: "verified", metadata: { exists: false } })];
+        return [evidence({ kind: "FileEvidence", producer: "test", stageId: context.stage.id, source: "memory", result: "pass", verification: "verified", metadata: { exists: true } })];
       } },
     ],
   };

@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { readdir, stat } from "node:fs/promises";
+import { join, relative } from "node:path";
 import type { AgentAdapter, ContextBundle, Evidence, KnowledgeStore, RunState, StageContext, StateStore, ToolExecutor, WorkflowDefinition } from "./domain.js";
 import { evidence, initialRun } from "./domain.js";
 import { acquireContext } from "./context.js";
@@ -11,6 +14,68 @@ export type OrchestratorOptions = {
   onEvent?: (event: { type: string; runId: string; stageId?: string; message?: string }) => void;
 };
 
+async function fileMetadata(root: string, current: string, output: string[], depth = 0): Promise<void> {
+  if (depth > 8 || output.length >= 5_000) return;
+  let entries;
+  try {
+    entries = await readdir(current, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if ([".git", ".hackon", "node_modules", "dist", "coverage"].includes(entry.name)) continue;
+    if (entry.isSymbolicLink()) continue;
+    const path = join(current, entry.name);
+    if (entry.isDirectory()) {
+      await fileMetadata(root, path, output, depth + 1);
+    } else {
+      try {
+        const info = await stat(path);
+        output.push(`${relative(root, path)}:${info.size}:${info.mtimeMs}`);
+      } catch {
+        // A concurrent agent may remove a file between directory listing and stat.
+      }
+    }
+  }
+}
+
+async function artifactMetadata(workspace: string, stageId: string): Promise<string[]> {
+  const output: string[] = [];
+  const patterns = stageId === "learn" ? [/./] : [/spec|prd|brief/i];
+  const visit = async (current: string, depth = 0): Promise<void> => {
+    if (depth > 8 || output.length >= 1_000) return;
+    let entries;
+    try {
+      entries = await readdir(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if ([".git", "node_modules", "dist", "coverage"].includes(entry.name)) continue;
+      if (entry.isSymbolicLink()) continue;
+      const path = join(current, entry.name);
+      if (entry.isDirectory()) await visit(path, depth + 1);
+      else if (stageId === "learn" ? current.includes(`${".hackon"}${"/learning"}`) : patterns.some((pattern) => pattern.test(entry.name))) {
+        const info = await stat(path).catch(() => undefined);
+        if (info) output.push(`${relative(workspace, path)}:${info.size}:${info.mtimeMs}`);
+      }
+    }
+  };
+  await visit(workspace);
+  return output.sort();
+}
+
+export async function captureStageBaseline(workspace: string, stageId: string): Promise<{ workspaceFingerprint: string; artifactFingerprint: string; capturedAt: string }> {
+  const files: string[] = [];
+  await fileMetadata(workspace, workspace, files);
+  const artifacts = await artifactMetadata(workspace, stageId);
+  return {
+    workspaceFingerprint: createHash("sha256").update(files.join("\n")).digest("hex"),
+    artifactFingerprint: createHash("sha256").update(artifacts.join("\n")).digest("hex"),
+    capturedAt: new Date().toISOString(),
+  };
+}
+
 export class Orchestrator {
   constructor(private readonly options: OrchestratorOptions) {}
 
@@ -18,6 +83,7 @@ export class Orchestrator {
     const run = resumeId ? await this.options.state.load(resumeId) : undefined;
     if (resumeId && !run) throw new Error(`Run not found: ${resumeId}`);
     const current = run ?? initialRun(workflow, objective, workspace);
+    current.stageBaselines ??= {};
     if (run) {
       for (const stage of Object.values(current.stages)) {
         if (stage.status === "running" || stage.status === "failed" || stage.status === "blocked") {
@@ -75,6 +141,7 @@ export class Orchestrator {
 
   private async executeStage(run: RunState, workflow: WorkflowDefinition, stage: WorkflowDefinition["stages"][number], context: ContextBundle): Promise<void> {
     const state = run.stages[stage.id];
+    run.stageBaselines[stage.id] = await captureStageBaseline(run.workspace, stage.id);
     state.status = "running";
     state.attempts += 1;
     state.startedAt = new Date().toISOString();

@@ -3,6 +3,13 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      run_real_e2e:
+        description: "Run the live OpenCode E2E (requires an OpenCode binary and provider credentials)"
+        required: true
+        default: false
+        type: boolean
 
 jobs:
   verify:
@@ -22,5 +29,18 @@ jobs:
       - run: npm run docs:check
       - run: npm pack --dry-run
       - run: npm audit --audit-level=high
+
+  e2e-opencode:
+    name: Real E2E (manual)
+    if: github.event_name == 'workflow_dispatch' && inputs.run_real_e2e == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Require OpenCode
+        run: command -v opencode
       - run: npm run e2e:real
-        continue-on-error: true

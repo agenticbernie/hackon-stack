@@ -11,6 +11,7 @@ const required = [
   "docs/security-model.md", "docs/testing.md", "docs/extending.md",
   "docs/troubleshooting.md", "docs/BUILD_STATUS.md",
   "docs/research/reference-analysis.md", "docs/research/capability-matrix.md",
+  "docs/e2e/README.md",
 ];
 for (const path of required) {
   const content = await readFile(join(root, path), "utf8");

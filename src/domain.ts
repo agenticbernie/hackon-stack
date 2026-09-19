@@ -114,6 +114,7 @@ export type RunState = {
   stages: Record<string, StageState>;
   evidence: Evidence[];
   selectedContext: string[];
+  stageBaselines: Record<string, { workspaceFingerprint: string; artifactFingerprint: string; capturedAt: string }>;
   error?: string;
 };
 
@@ -139,6 +140,7 @@ export type ToolRequest = {
   cwd: string;
   timeoutMs?: number;
   env?: Record<string, string>;
+  permissions?: Permission[];
 };
 
 export type ToolResult = {
@@ -196,5 +198,6 @@ export function initialRun(workflow: WorkflowDefinition, objective: string, work
     stages: Object.fromEntries(workflow.stages.map((stage) => [stage.id, { id: stage.id, status: "pending", attempts: 0 }])),
     evidence: [],
     selectedContext: [],
+    stageBaselines: {},
   };
 }

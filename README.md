@@ -38,3 +38,7 @@ automatic tool approval is acceptable.
 
 See `docs/BUILD_STATUS.md` for evidence-based status. This rebuild does not
 publish automatically.
+
+Ordinary CI does not silently ignore live-agent failures. Real OpenCode E2E is
+a separate manual workflow job and fails explicitly when OpenCode or provider
+credentials are unavailable.

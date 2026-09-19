@@ -2,7 +2,7 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { Evidence, StageDefinition, StageContext, WorkflowDefinition } from "./domain.js";
 import { evidence } from "./domain.js";
-import { agentEvidence } from "./orchestrator.js";
+import { agentEvidence, captureStageBaseline } from "./orchestrator.js";
 
 function reviewDecision(output: string, ok: boolean): { blockerCount: number; approved: boolean } {
   const tail = output.slice(-8_000);
@@ -23,6 +23,7 @@ async function findArtifact(workspace: string, pattern: RegExp): Promise<string 
     }
     for (const entry of entries) {
       if (["node_modules", ".git", "dist", "coverage"].includes(entry.name)) continue;
+      if (entry.isSymbolicLink()) continue;
       const path = join(directory, entry.name);
       if (entry.isDirectory()) {
         const found = await visit(path, depth + 1);
@@ -128,6 +129,7 @@ function reviewStage(id: string, role: string, focus: string): StageDefinition {
         stageId: id,
         source: result.source,
         result: approved ? "pass" : "fail",
+        verification: result.ok ? "verified" : "unverified",
         metadata: { output: result.output.slice(-20_000), blockerCount, approved, agentSucceeded: result.ok },
       })];
     },
@@ -156,14 +158,17 @@ function standardStages(): StageDefinition[] {
           "implementation engineer", ["read", "write", "execute"]);
         if (agent.metadata.agentSucceeded !== true) throw new Error("Implementation agent failed");
         const status = await context.tools.run({ argv: ["git", "status", "--short"], cwd: context.run.workspace });
+        const after = await captureStageBaseline(context.run.workspace, context.stage.id);
+        const baseline = context.run.stageBaselines[context.stage.id];
+        const changed = Boolean(baseline && baseline.workspaceFingerprint !== after.workspaceFingerprint);
         return [agent, evidence({
           kind: "DiffEvidence",
           producer: "hackon-tool-runner",
           stageId: context.stage.id,
           source: "git status --short",
-          result: status.exitCode === 0 && status.stdout.trim().length > 0 ? "pass" : "fail",
+          result: changed ? "pass" : "fail",
           verification: "verified",
-          metadata: { changed: status.exitCode === 0 && status.stdout.trim().length > 0, stdout: status.stdout, exitCode: status.exitCode },
+          metadata: { changed, stdout: status.stdout, exitCode: status.exitCode, baseline, after },
         })];
       },
     },
@@ -196,6 +201,7 @@ Treat the recorded reviewer metadata as evidence, inspect the diff for anything 
         return [evidence({
           kind: "ReviewEvidence", producer: result.source, stageId: context.stage.id, source: result.source,
           result: approved ? "pass" : "fail",
+          verification: result.ok ? "verified" : "unverified",
           metadata: { output: result.output.slice(-20_000), blockerCount, approved },
         })];
       },
@@ -223,14 +229,17 @@ Treat the recorded reviewer metadata as evidence, inspect the diff for anything 
           "learning facilitator", ["read", "write"]);
         if (item.metadata.agentSucceeded !== true) throw new Error("Learning agent failed");
         const artifact = await findArtifact(join(context.run.workspace, ".hackon", "learning"), /.+/);
+        const after = await captureStageBaseline(context.run.workspace, context.stage.id);
+        const baseline = context.run.stageBaselines[context.stage.id];
+        const createdThisStage = Boolean(baseline && baseline.artifactFingerprint !== after.artifactFingerprint && artifact);
         return [item, evidence({
           kind: "FileEvidence",
           producer: "hackon-orchestrator",
           stageId: context.stage.id,
           source: artifact ?? ".hackon/learning",
-          result: artifact ? "pass" : "fail",
+          result: createdThisStage ? "pass" : "fail",
           verification: "verified",
-          metadata: { exists: Boolean(artifact), path: artifact },
+          metadata: { exists: createdThisStage, path: artifact, createdThisStage, baseline, after },
         })];
       },
     },
@@ -268,9 +277,13 @@ export function builtInWorkflows(): Map<string, WorkflowDefinition> {
         const item = agentEvidence(context.stage.id, result.source, result.output, result.ok, { agentSucceeded: result.ok });
         if (!result.ok) throw new Error(result.error ?? "specification agent failed");
         const artifact = await findArtifact(context.run.workspace, /spec|prd|brief/i);
+        const after = await captureStageBaseline(context.run.workspace, context.stage.id);
+        const baseline = context.run.stageBaselines[context.stage.id];
+        const createdThisStage = Boolean(baseline && baseline.artifactFingerprint !== after.artifactFingerprint && artifact);
         return [item, evidence({
           kind: "FileEvidence", producer: "hackon-orchestrator", stageId: context.stage.id, source: ".hackon",
-          result: artifact ? "pass" : "fail", verification: "verified", metadata: { exists: Boolean(artifact), path: artifact, schemaValid: Boolean(artifact) },
+          result: createdThisStage ? "pass" : "fail", verification: "verified",
+          metadata: { exists: createdThisStage, path: artifact, schemaValid: createdThisStage, createdThisStage, baseline, after },
         })];
       } } : stage),
   }]));

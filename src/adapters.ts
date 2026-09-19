@@ -1,8 +1,37 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { readFile, readdir } from "node:fs/promises";
+import { join, relative } from "node:path";
 import type { AgentAdapter, AgentResult, AgentTask } from "./domain.js";
 
 function splitCommand(value: string): string[] {
   return value.match(/"[^"]*"|'[^']*'|\S+/g)?.map((part) => part.replace(/^["']|["']$/g, "")) ?? [];
+}
+
+async function workspaceFingerprint(root: string): Promise<string> {
+  const entries: string[] = [];
+  const visit = async (directory: string, depth = 0): Promise<void> => {
+    if (depth > 8) return;
+    for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+      if ([".git", ".hackon", "node_modules", "dist", "coverage"].includes(entry.name)) continue;
+      if (entry.isSymbolicLink()) continue;
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await visit(path, depth + 1);
+      } else {
+        entries.push(`${relative(root, path)}:${(await readFile(path)).toString("base64")}`);
+      }
+    }
+  };
+  await visit(root);
+  return createHash("sha256").update(entries.join("\n")).digest("hex");
+}
+
+function adapterEnvironment(): NodeJS.ProcessEnv {
+  const allowed = ["PATH", "HOME", "USER", "LANG", "LANGUAGE", "TERM", "TMPDIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "HACKON_OPENCODE_COMMAND", "HACKON_OPENCODE_AUTO_APPROVE"];
+  const passthrough = (process.env.HACKON_PASSTHROUGH_ENV ?? "").split(",").map((name) => name.trim()).filter(Boolean);
+  const names = [...new Set([...allowed, ...passthrough])];
+  return Object.fromEntries(names.filter((name) => process.env[name] !== undefined).map((name) => [name, process.env[name]]));
 }
 
 export class OpenCodeAdapter implements AgentAdapter {
@@ -11,6 +40,7 @@ export class OpenCodeAdapter implements AgentAdapter {
 
   async run(task: AgentTask): Promise<AgentResult> {
     const started = Date.now();
+    const before = task.permissions.includes("write") ? undefined : await workspaceFingerprint(task.workspace);
     const executableParts = splitCommand(this.executable);
     if (executableParts.length === 0) return { ok: false, output: "", error: "OpenCode executable is empty", source: this.id, durationMs: 0 };
     const auto = process.env.HACKON_OPENCODE_AUTO_APPROVE === "1";
@@ -18,19 +48,23 @@ export class OpenCodeAdapter implements AgentAdapter {
     if (auto) args.push("--auto");
     args.push("--", this.buildPrompt(task));
     return await new Promise<AgentResult>((resolve, reject) => {
-      const child = spawn(executableParts[0], args, { cwd: task.workspace, shell: false, stdio: ["ignore", "pipe", "pipe"] });
+      const child = spawn(executableParts[0], args, { cwd: task.workspace, shell: false, env: adapterEnvironment(), stdio: ["ignore", "pipe", "pipe"] });
       let output = "";
       let error = "";
       child.stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
       child.stderr.on("data", (chunk: Buffer) => { error += chunk.toString(); });
       child.once("error", reject);
-      child.once("close", (code) => resolve({
-        ok: code === 0,
+      child.once("close", async (code) => {
+        const after = before === undefined ? undefined : await workspaceFingerprint(task.workspace);
+        const readOnlyViolation = before !== undefined && before !== after;
+        resolve({
+        ok: code === 0 && !readOnlyViolation,
         output: output.slice(-300_000),
-        error: code === 0 ? undefined : error.slice(-100_000) || `OpenCode exited with ${code}`,
+        error: readOnlyViolation ? "Read-only agent task modified the workspace" : code === 0 ? undefined : error.slice(-100_000) || `OpenCode exited with ${code}`,
         source: `${this.id}:${executableParts.join(" ")}`,
         durationMs: Date.now() - started,
-      }));
+        });
+      });
     });
   }
 

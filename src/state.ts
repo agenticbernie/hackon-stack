@@ -1,6 +1,13 @@
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { KnowledgeStore, RunState, StateStore } from "./domain.js";
+
+async function atomicWrite(path: string, content: string): Promise<void> {
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  await writeFile(temporary, content, { encoding: "utf8", flag: "wx" });
+  await rename(temporary, path);
+}
 
 export class FileStateStore implements StateStore {
   private readonly directory: string;
@@ -8,6 +15,7 @@ export class FileStateStore implements StateStore {
     this.directory = join(workspace, ".hackon", "runs");
   }
   async load(runId: string): Promise<RunState | undefined> {
+    if (!/^[a-zA-Z0-9-]+$/.test(runId)) throw new Error("Invalid run ID");
     try {
       return JSON.parse(await readFile(join(this.directory, `${runId}.json`), "utf8")) as RunState;
     } catch (error) {
@@ -17,7 +25,7 @@ export class FileStateStore implements StateStore {
   }
   async save(run: RunState): Promise<void> {
     await mkdir(this.directory, { recursive: true });
-    await writeFile(join(this.directory, `${run.id}.json`), JSON.stringify(run, null, 2));
+    await atomicWrite(join(this.directory, `${run.id}.json`), JSON.stringify(run, null, 2));
   }
   async list(): Promise<RunState[]> {
     try {
@@ -54,9 +62,9 @@ export class FileKnowledgeStore implements KnowledgeStore {
   }
   async save(entry: { title: string; content: string; tags: string[]; sourceRunId: string }): Promise<void> {
     const entries = await this.read();
-    entries.push({ ...entry, id: crypto.randomUUID(), content: redact(entry.content), createdAt: new Date().toISOString() });
+    entries.push({ ...entry, id: randomUUID(), content: redact(entry.content), createdAt: new Date().toISOString() });
     await mkdir(join(this.file, ".."), { recursive: true });
-    await writeFile(this.file, JSON.stringify(entries, null, 2));
+    await atomicWrite(this.file, JSON.stringify(entries, null, 2));
   }
   async search(query: string, limit = 5): Promise<Array<{ id: string; title: string; content: string; score: number }>> {
     const terms = new Set(query.toLowerCase().split(/\W+/).filter((term) => term.length > 2));

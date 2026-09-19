@@ -15,6 +15,7 @@ async function collectFiles(root: string, current: string, result: ContextBundle
   }
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if (ignored.has(entry.name)) continue;
+    if (entry.isSymbolicLink()) continue;
     const path = join(current, entry.name);
     if (entry.isDirectory()) {
       await collectFiles(root, path, result, depth + 1);
