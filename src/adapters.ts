@@ -28,7 +28,7 @@ function adapterEnvironment(): NodeJS.ProcessEnv {
     "PATH", "HOME", "USER", "LANG", "LANGUAGE", "TERM", "TMPDIR",
     "XDG_CONFIG_HOME", "XDG_DATA_HOME", "HACKON_OPENCODE_COMMAND",
     "HACKON_OPENCODE_AUTO_APPROVE", "HACKON_DROID_COMMAND",
-    "OPENAI_API_KEY", "FACTORY_DROID_AUTO_UPDATE_ENABLED",
+    "FACTORY_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "FACTORY_DROID_AUTO_UPDATE_ENABLED",
     "HACKON_AGENT_TIMEOUT_MS",
   ];
   const passthrough = (process.env.HACKON_PASSTHROUGH_ENV ?? "").split(",").map((name) => name.trim()).filter(Boolean);
@@ -72,6 +72,28 @@ function parseDroidResult(output: string): { text: string; sessionId?: string; m
   return { text: redactSecrets(output), metadata: { structuredOutput: false } };
 }
 
+function parseOpenCodeResult(output: string): { text: string; sessionId?: string; metadata: Record<string, unknown> } {
+  const text: string[] = [];
+  let sessionId: string | undefined;
+  for (const line of output.split(/\r?\n/)) {
+    try {
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      const part = parsed.part as Record<string, unknown> | undefined;
+      if (typeof parsed.sessionID === "string") sessionId = parsed.sessionID;
+      if (part && typeof part.sessionID === "string") sessionId = part.sessionID;
+      if (part && typeof part.text === "string") text.push(part.text);
+      else if (typeof parsed.text === "string") text.push(parsed.text);
+    } catch {
+      if (line.trim()) text.push(line);
+    }
+  }
+  return {
+    text: redactSecrets(text.join("\n") || output),
+    sessionId,
+    metadata: { structuredOutput: true, adapter: "opencode", eventCount: output.split(/\r?\n/).filter(Boolean).length },
+  };
+}
+
 type SpawnOptions = {
   executable: string;
   args: string[];
@@ -81,6 +103,8 @@ type SpawnOptions = {
   version?: string;
   metadata?: Record<string, unknown>;
   timeoutMs?: number;
+  signal?: AbortSignal;
+  parser?: (output: string) => { text: string; sessionId?: string; metadata: Record<string, unknown> };
 };
 
 async function spawnAgent(options: SpawnOptions): Promise<AgentResult> {
@@ -97,6 +121,8 @@ async function spawnAgent(options: SpawnOptions): Promise<AgentResult> {
     let output = "";
     let error = "";
     let timedOut = false;
+    let cancelled = false;
+    let settled = false;
     const outputLimit = 300_000;
     const errorLimit = 100_000;
     const timeoutMs = options.timeoutMs ?? 15 * 60 * 1000;
@@ -105,6 +131,20 @@ async function spawnAgent(options: SpawnOptions): Promise<AgentResult> {
       child.kill("SIGTERM");
       setTimeout(() => child.kill("SIGKILL"), 2_000).unref();
     }, timeoutMs);
+    const cancel = (): void => {
+      cancelled = true;
+      child.kill("SIGTERM");
+      setTimeout(() => child.kill("SIGKILL"), 2_000).unref();
+    };
+    if (options.signal?.aborted) cancel();
+    else options.signal?.addEventListener("abort", cancel, { once: true });
+    const finish = (result: AgentResult): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", cancel);
+      resolve(result);
+    };
     const append = (current: string, chunk: Buffer, limit: number): string => {
       const next = current + chunk.toString();
       return next.length > limit ? next.slice(-limit) : next;
@@ -112,29 +152,27 @@ async function spawnAgent(options: SpawnOptions): Promise<AgentResult> {
     child.stdout.on("data", (chunk: Buffer) => { output = append(output, chunk, outputLimit); });
     child.stderr.on("data", (chunk: Buffer) => { error = append(error, chunk, errorLimit); });
     child.once("error", (spawnError) => {
-      clearTimeout(timer);
-      resolve({
-      ok: false,
-      output: redactSecrets(output),
-      error: spawnError.message,
-      source: options.source,
-      durationMs: Date.now() - started,
-      metadata: { ...options.metadata, cliVersion: options.version, timedOut },
-    });
+      finish({
+        ok: false,
+        output: redactSecrets(output),
+        error: cancelled ? "Agent cancelled" : spawnError.message,
+        source: options.source,
+        durationMs: Date.now() - started,
+        metadata: { ...options.metadata, cliVersion: options.version, timedOut, cancelled },
+      });
     });
     child.once("close", async (code) => {
-      clearTimeout(timer);
-      const parsed = parseDroidResult(output);
+      const parsed = options.parser ? options.parser(output) : parseDroidResult(output);
       const after = options.before === undefined ? undefined : await workspaceFingerprint(options.cwd);
       const readOnlyViolation = options.before !== undefined && options.before !== after;
-      resolve({
-        ok: code === 0 && !readOnlyViolation && !timedOut,
+      finish({
+        ok: code === 0 && !readOnlyViolation && !timedOut && !cancelled,
         output: parsed.text.slice(-outputLimit),
-        error: timedOut ? `Agent exceeded ${timeoutMs}ms timeout` : readOnlyViolation ? "Read-only agent task modified the workspace" : code === 0 ? undefined : redactSecrets(error) || `Agent exited with ${code}`,
+        error: cancelled ? "Agent cancelled" : timedOut ? `Agent exceeded ${timeoutMs}ms timeout` : readOnlyViolation ? "Read-only agent task modified the workspace" : code === 0 ? undefined : redactSecrets(error) || `Agent exited with ${code}`,
         source: options.source,
         durationMs: Date.now() - started,
         sessionId: parsed.sessionId,
-        metadata: { ...parsed.metadata, ...options.metadata, cliVersion: options.version, exitCode: code, readOnlyViolation, timedOut },
+        metadata: { ...parsed.metadata, ...options.metadata, cliVersion: options.version, exitCode: code, readOnlyViolation, timedOut, cancelled },
       });
     });
   });
@@ -181,6 +219,7 @@ export class FactoryDroidAdapter implements AgentAdapter {
       version: this.version,
       metadata: { adapter: this.id, autonomy, toolRestrictions, workspace: task.workspace, sessionId: task.sessionId, model: this.model },
       timeoutMs: boundedTimeout(),
+      signal: task.signal,
     });
   }
 
@@ -247,6 +286,8 @@ export class OpenCodeAdapter implements AgentAdapter {
       before,
       source: `${this.id}:${this.executable}`,
       metadata: { adapter: this.id, workspace: task.workspace },
+      signal: task.signal,
+      parser: parseOpenCodeResult,
     });
     return { ...result, durationMs: result.durationMs || Date.now() - started };
   }

@@ -9,3 +9,4 @@ export * from "./workflows.js";
 export * from "./project-profile.js";
 export * from "./run-lock.js";
 export * from "./worktree.js";
+export * from "./cancellation.js";

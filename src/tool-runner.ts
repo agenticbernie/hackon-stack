@@ -60,16 +60,25 @@ export class SafeToolRunner implements ToolExecutor {
         stderr += chunk.toString();
       });
       let timedOut = false;
+      let cancelled = false;
       const timeout = setTimeout(() => {
         timedOut = true;
         child.kill("SIGTERM");
       }, request.timeoutMs ?? this.defaultTimeoutMs);
+      const cancel = (): void => {
+        cancelled = true;
+        child.kill("SIGTERM");
+      };
+      if (request.signal?.aborted) cancel();
+      else request.signal?.addEventListener("abort", cancel, { once: true });
       child.once("error", (error) => {
         clearTimeout(timeout);
+        request.signal?.removeEventListener("abort", cancel);
         reject(error);
       });
       child.once("close", (exitCode) => {
         clearTimeout(timeout);
+        request.signal?.removeEventListener("abort", cancel);
         resolveResult({
           command,
           cwd,
@@ -79,6 +88,7 @@ export class SafeToolRunner implements ToolExecutor {
           durationMs: Date.now() - started,
           timestamp,
           timedOut,
+          cancelled,
         });
       });
     });

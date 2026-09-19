@@ -8,6 +8,7 @@ import { evaluateGates } from "./gates.js";
 import { detectProjectProfile } from "./project-profile.js";
 import { RunLock } from "./run-lock.js";
 import { createRunWorktree } from "./worktree.js";
+import { RunCancellation } from "./cancellation.js";
 
 export type OrchestratorOptions = {
   tools: ToolExecutor;
@@ -82,19 +83,27 @@ export async function captureStageBaseline(workspace: string, stageId: string): 
 export class Orchestrator {
   constructor(private readonly options: OrchestratorOptions) {}
 
-  async run(workflow: WorkflowDefinition, objective: string, workspace: string, resumeId?: string, options: { worktree?: string } = {}): Promise<RunState> {
+  async run(workflow: WorkflowDefinition, objective: string, workspace: string, resumeId?: string, options: { worktree?: string; inPlace?: boolean } = {}): Promise<RunState> {
     const run = resumeId ? await this.options.state.load(resumeId) : undefined;
     if (resumeId && !run) throw new Error(`Run not found: ${resumeId}`);
     const current = run ?? initialRun(workflow, objective, workspace);
-    const lock = await RunLock.acquire(workspace, current.id);
+    const baseWorkspace = current.baseWorkspace ?? workspace;
+    const lock = await RunLock.acquire(baseWorkspace, current.id);
+    const controller = new AbortController();
+    RunCancellation.register(current.id, controller);
+    const stopCancellationWatch = RunCancellation.watch(baseWorkspace, current.id, controller);
     try {
-      if (!run && options.worktree) {
-        current.worktreePath = await createRunWorktree(workspace, current.id, options.worktree);
+      const cancellation = await RunCancellation.read(baseWorkspace, current.id);
+      if (cancellation) controller.abort(cancellation.reason);
+      if (!run && !options.inPlace && workflow.stages.some((stage) => stage.writes)) {
+        current.worktreePath = await createRunWorktree(workspace, current.id, options.worktree ?? "run");
         current.workspace = current.worktreePath;
+        current.baseWorkspace = workspace;
+        current.baseCommit = (await this.options.tools.run({ argv: ["git", "rev-parse", "HEAD"], cwd: workspace })).stdout.trim();
       }
       current.stageBaselines ??= {};
       current.projectProfile ??= await detectProjectProfile(current.workspace);
-      if (run) {
+      if (run && !controller.signal.aborted) {
         for (const stage of Object.values(current.stages)) {
           if (stage.status === "running" || stage.status === "failed" || stage.status === "blocked") {
             stage.status = "pending";
@@ -104,6 +113,12 @@ export class Orchestrator {
         current.status = "running";
         current.error = undefined;
       }
+      if (controller.signal.aborted) {
+        this.markCancelled(current, await RunCancellation.read(baseWorkspace, current.id));
+        current.updatedAt = new Date().toISOString();
+        await this.options.state.save(current);
+        return current;
+      }
       const context = await acquireContext(current.workspace, current.objective, this.options.knowledge, { stageId: "run", role: workflow.name, profile: current.projectProfile });
       current.contextSelections = [...(current.contextSelections ?? []), ...(context.selections ?? [])];
       current.selectedContext = [...context.files.map((file) => file.path), ...context.knowledge.map((item) => `knowledge:${item.id}`)];
@@ -112,6 +127,7 @@ export class Orchestrator {
 
       try {
         while (Object.values(current.stages).some((stage) => stage.status === "pending" || stage.status === "running")) {
+          if (controller.signal.aborted) throw new Error("Run cancelled");
           const ready = workflow.stages.filter((stage) =>
             current.stages[stage.id].status === "pending" &&
             stage.dependsOn.every((dependency) => current.stages[dependency].status === "succeeded"));
@@ -128,14 +144,21 @@ export class Orchestrator {
           }
           const parallel = ready.filter((stage) => !stage.writes);
           const batch = parallel.length > 0 ? parallel : [ready[0]];
-          const results = await Promise.allSettled(batch.map((stage) => this.executeStage(current, workflow, stage, context)));
+          const results = await Promise.allSettled(batch.map((stage) => this.executeStage(current, workflow, stage, context, controller.signal)));
+          if (controller.signal.aborted) throw new Error("Run cancelled");
           const rejected = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
           if (rejected) throw rejected.reason;
         }
-        current.status = Object.values(current.stages).every((stage) => stage.status === "succeeded") ? "succeeded" : "failed";
+        const cancellation = await RunCancellation.read(baseWorkspace, current.id);
+        if (controller.signal.aborted || cancellation) this.markCancelled(current, cancellation);
+        else current.status = Object.values(current.stages).every((stage) => stage.status === "succeeded") ? "succeeded" : "failed";
       } catch (error) {
-        current.status = "failed";
-        current.error = error instanceof Error ? error.message : String(error);
+        const cancellation = await RunCancellation.read(baseWorkspace, current.id);
+        if (controller.signal.aborted || cancellation) this.markCancelled(current, cancellation);
+        else {
+          current.status = "failed";
+          current.error = error instanceof Error ? error.message : String(error);
+        }
       }
       current.updatedAt = new Date().toISOString();
       await this.options.state.save(current);
@@ -149,11 +172,18 @@ export class Orchestrator {
       }
       return current;
     } finally {
+      RunCancellation.unregister(current.id);
+      stopCancellationWatch();
+      if (current.status !== "cancelled") await RunCancellation.clear(baseWorkspace, current.id);
       await lock.release();
     }
   }
 
-  private async executeStage(run: RunState, workflow: WorkflowDefinition, stage: WorkflowDefinition["stages"][number], context: ContextBundle): Promise<void> {
+  private async executeStage(run: RunState, workflow: WorkflowDefinition, stage: WorkflowDefinition["stages"][number], context: ContextBundle, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) {
+      run.stages[stage.id].status = "cancelled";
+      return;
+    }
     const state = run.stages[stage.id];
     run.stageBaselines[stage.id] = await captureStageBaseline(run.workspace, stage.id);
     state.status = "running";
@@ -177,8 +207,10 @@ export class Orchestrator {
             profile: run.projectProfile,
           }),
           knowledge: this.options.knowledge,
+          signal,
         };
         run.contextSelections = [...(run.contextSelections ?? []), ...(stageContext.context.selections ?? [])];
+        const influenceStart = run.knowledgeInfluence?.length ?? 0;
         run.knowledgeInfluence = [
           ...(run.knowledgeInfluence ?? []),
           ...stageContext.context.knowledge.map((item) => ({
@@ -191,7 +223,14 @@ export class Orchestrator {
         ];
         await this.options.state.save(run);
         const results = await stage.execute(stageContext);
+        if (signal.aborted || await RunCancellation.read(run.baseWorkspace ?? run.workspace, run.id)) throw new Error("Run cancelled");
         run.evidence.push(...results);
+        for (const influence of (run.knowledgeInfluence ?? []).slice(influenceStart)) {
+          const linkedEvidence = results.map((item) => `${item.kind}:${item.result}:${item.verification ?? "unverified"}`).join(", ");
+          influence.decisionBefore = `Knowledge ${influence.knowledgeId} was supplied before stage ${stage.id}.`;
+          influence.decisionAfter = `Stage ${stage.id} produced ${linkedEvidence || "no evidence"}.`;
+          influence.evidenceOfInfluence = linkedEvidence || "No stage evidence was produced; influence is unproven.";
+        }
         const gateResults = evaluateGates(stage.gates, run, stage.id);
         state.gateResults = gateResults;
         const failedBlocking = gateResults.filter((result) => result.blocking && !result.passed);
@@ -218,6 +257,19 @@ export class Orchestrator {
 
   private emit(event: { type: string; runId: string; stageId?: string; message?: string }): void {
     this.options.onEvent?.(event);
+  }
+
+  private markCancelled(run: RunState, cancellation: { requestedAt: string; reason?: string } | undefined): void {
+    run.status = "cancelled";
+    run.cancellation = {
+      requestedAt: cancellation?.requestedAt ?? new Date().toISOString(),
+      reason: cancellation?.reason,
+    };
+    for (const stage of Object.values(run.stages)) {
+      if (stage.status === "running" || stage.status === "failed") stage.status = "cancelled";
+      else if (stage.status === "pending") stage.status = "blocked";
+    }
+    run.error = "Run cancelled";
   }
 }
 

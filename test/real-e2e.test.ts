@@ -64,9 +64,9 @@ test("real OpenCode feature path modifies and verifies a fixture when enabled", 
     knowledge: new FileKnowledgeStore(workspace),
   }).run(builtInWorkflows().get("feature-development")!, "Add a function named reverseWords that reverses the order of whitespace-separated words, with tests for empty input and multiple spaces.", workspace);
   assert.equal(result.status, "succeeded", JSON.stringify(result, null, 2));
-  await exec("npm", ["test"], { cwd: workspace });
+  await exec("npm", ["test"], { cwd: result.workspace });
   assert.ok(result.evidence.some((item) => item.kind === "TestEvidence" && item.result === "pass"));
-  await persistSnapshot(workspace, result);
+  await persistSnapshot(result.workspace, result);
 });
 
 test("real Factory Droid feature path modifies and verifies a fixture when enabled", { timeout: 20 * 60_000 }, async (t) => {
@@ -91,5 +91,5 @@ test("real Factory Droid feature path modifies and verifies a fixture when enabl
   }).run(builtInWorkflows().get("feature-development")!, "Add reverseWords that reverses whitespace-separated words, with tests for empty input and multiple spaces.", workspace);
   assert.equal(result.status, "succeeded", JSON.stringify(result, null, 2));
   assert.ok(result.adapterSessions && Object.keys(result.adapterSessions).length > 0);
-  await persistSnapshot(workspace, result, "factory-droid-feature");
+  await persistSnapshot(result.workspace, result, "factory-droid-feature");
 });

@@ -61,8 +61,10 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Require Factory Droid
-        run: command -v droid
+      - name: Install pinned Factory Droid
+        run: npm install --global droid@0.222.0
+      - name: Verify Factory Droid version
+        run: test "$(droid --version)" = "0.222.0"
       - name: Configure OpenAI BYOK model
         run: |
           mkdir -p "$HOME/.factory"
@@ -81,5 +83,7 @@ jobs:
           JSON
       - run: npm run e2e:factory
         env:
+          FACTORY_API_KEY: ${{ secrets.FACTORY_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           HACKON_DROID_MODEL: custom:gpt-5.6-terra-1
+          HACKON_EXPECTED_DROID_VERSION: 0.222.0

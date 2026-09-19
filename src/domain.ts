@@ -40,7 +40,11 @@ export type GateType =
   | "metric_threshold"
   | "coverage_threshold"
   | "security_scan"
-  | "agent_succeeded";
+  | "agent_succeeded"
+  | "optional_command_pass"
+  | "finding_lifecycle"
+  | "tests_fail"
+  | "metric_valid";
 
 export type QualityGate = {
   id: string;
@@ -62,6 +66,7 @@ export type AgentTask = {
   sessionId?: string;
   worktree?: string;
   toolRestrictions?: string[];
+  signal?: AbortSignal;
 };
 
 export type AgentResult = {
@@ -143,6 +148,7 @@ export type RunState = {
   workflowId: string;
   objective: string;
   workspace: string;
+  baseWorkspace?: string;
   status: "running" | "succeeded" | "failed" | "cancelled";
   createdAt: string;
   updatedAt: string;
@@ -155,6 +161,9 @@ export type RunState = {
   adapterSessions?: Record<string, { adapter: string; sessionId: string; stageId: string; createdAt: string; resumedFrom?: string }>;
   projectProfile?: ProjectProfile;
   worktreePath?: string;
+  baseCommit?: string;
+  cancellation?: { requestedAt: string; requestedBy?: string; reason?: string };
+  findingRegistry?: ReviewFinding[];
   error?: string;
 };
 
@@ -164,6 +173,11 @@ export type ContextBundle = {
   knowledge: Array<{ id: string; title: string; content: string; score: number }>;
   warnings: string[];
   selections?: ContextSelection[];
+  candidateCount?: number;
+  selectedCount?: number;
+  budget?: number;
+  budgetConsumed?: number;
+  omittedCandidates?: Array<{ path: string; score: number; reason: string }>;
 };
 
 export type ContextSelection = {
@@ -174,6 +188,7 @@ export type ContextSelection = {
   relevanceScore: number;
   approximateSize: number;
   stageId?: string;
+  selected?: boolean;
 };
 
 export type KnowledgeInfluence = {
@@ -181,6 +196,9 @@ export type KnowledgeInfluence = {
   stageId?: string;
   selectionReason: string;
   influence: string;
+  decisionBefore?: string;
+  decisionAfter?: string;
+  evidenceOfInfluence?: string;
   recordedAt: string;
 };
 
@@ -210,6 +228,7 @@ export type StageContext = {
   adapter: AgentAdapter;
   context: ContextBundle;
   knowledge: KnowledgeStore;
+  signal?: AbortSignal;
 };
 
 export type ToolRequest = {
@@ -218,6 +237,7 @@ export type ToolRequest = {
   timeoutMs?: number;
   env?: Record<string, string>;
   permissions?: Permission[];
+  signal?: AbortSignal;
 };
 
 export type ToolResult = {
@@ -229,6 +249,7 @@ export type ToolResult = {
   durationMs: number;
   timestamp: string;
   timedOut: boolean;
+  cancelled: boolean;
 };
 
 export interface ToolExecutor {
@@ -271,6 +292,7 @@ export function initialRun(workflow: WorkflowDefinition, objective: string, work
     workflowId: workflow.id,
     objective,
     workspace,
+    baseWorkspace: workspace,
     status: "running",
     createdAt: now,
     updatedAt: now,

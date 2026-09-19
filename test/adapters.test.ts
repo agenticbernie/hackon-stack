@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FactoryDroidAdapter } from "../src/adapters.js";
+import { FactoryDroidAdapter, OpenCodeAdapter } from "../src/adapters.js";
 import type { AgentTask } from "../src/domain.js";
 
 function task(workspace: string, permissions: AgentTask["permissions"], prompt = "inspect"): AgentTask {
@@ -78,4 +78,30 @@ test("Factory Droid adapter terminates timed out processes", async () => {
   else process.env.HACKON_AGENT_TIMEOUT_MS = previous;
   assert.equal(result.ok, false);
   assert.equal(result.metadata?.timedOut, true);
+});
+
+test("Factory Droid adapter terminates an active child on cancellation", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "hackon-adapter-cancel-"));
+  const adapter = new FactoryDroidAdapter(await fakeDroid());
+  const controller = new AbortController();
+  const running = adapter.run({ ...task(workspace, ["read"], "SLEEP"), signal: controller.signal });
+  setTimeout(() => controller.abort("test cancellation"), 50);
+  const result = await running;
+  assert.equal(result.ok, false);
+  assert.equal(result.metadata?.cancelled, true);
+  assert.equal(result.error, "Agent cancelled");
+});
+
+test("OpenCode adapter preserves final text from JSON event streams", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "hackon-opencode-events-"));
+  const script = join(workspace, "opencode.mjs");
+  await writeFile(script, `
+    console.log(JSON.stringify({ type: "text", sessionID: "opencode-session", part: { type: "text", text: "progress" } }));
+    console.log(JSON.stringify({ type: "text", sessionID: "opencode-session", part: { type: "text", text: '{"approved":true,"summary":"clean","findings":[]}' } }));
+  `);
+  const result = await new OpenCodeAdapter(`node ${script}`).run(task(workspace, ["read"]));
+  assert.equal(result.ok, true);
+  assert.equal(result.sessionId, "opencode-session");
+  assert.match(result.output, /"approved":true/);
+  assert.equal(result.metadata?.adapter, "opencode");
 });

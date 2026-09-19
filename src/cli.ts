@@ -10,9 +10,12 @@ import { FactoryDroidAdapter, OpenCodeAdapter } from "./adapters.js";
 import { SafeToolRunner } from "./tool-runner.js";
 import { Orchestrator } from "./orchestrator.js";
 import { detectProjectProfile } from "./project-profile.js";
+import { RunCancellation } from "./cancellation.js";
+import { cleanupRunWorktree } from "./worktree.js";
 import type { AgentAdapter } from "./domain.js";
 
 const version = "0.1.0";
+const supportedDroidVersion = "0.222.0";
 const workflows = builtInWorkflows();
 const execFileAsync = promisify(execFile);
 
@@ -27,6 +30,7 @@ Usage:
   hackon evidence <run-id>
   hackon resume <run-id>
   hackon cancel <run-id>
+  hackon cleanup <run-id>
   hackon workflows
   hackon skills
   hackon knowledge search <query>
@@ -43,6 +47,7 @@ Options:
   --adapter-command <cmd>  Override the selected adapter executable
   --model <id>             Factory Droid model or configured BYOK model
   --worktree <name>        Run in an isolated Droid/Git worktree
+  --in-place               Explicitly allow modifying the canonical checkout
   --dry-run                Show the selected workflow and profile without executing
   --help, --version
 
@@ -65,10 +70,21 @@ async function init(workspace: string): Promise<void> {
     adapter: "factory-droid",
     command: process.env.HACKON_DROID_COMMAND ?? "droid",
     model: process.env.HACKON_DROID_MODEL,
-    auth: { env: "OPENAI_API_KEY" },
+    auth: { factoryEnv: "FACTORY_API_KEY", byokEnv: "OPENAI_API_KEY" },
     permissions: { read: true, write: true, execute: true, network: false, external: false },
   }, null, 2));
   console.log(`Initialized HackOn in ${workspace}`);
+}
+
+async function skillsDirectory(): Promise<string> {
+  const candidates = [
+    fileURLToPath(new URL("../skills", import.meta.url)),
+    fileURLToPath(new URL("../../skills", import.meta.url)),
+  ];
+  for (const candidate of candidates) {
+    if (await access(candidate).then(() => true).catch(() => false)) return candidate;
+  }
+  throw new Error("Packaged skills directory was not found");
 }
 
 async function doctor(workspace: string): Promise<number> {
@@ -89,18 +105,33 @@ async function doctor(workspace: string): Promise<number> {
   };
   const profile = await detectProjectProfile(workspace);
   const config = await readFile(join(workspace, ".hackon", "config.json"), "utf8").then((value) => JSON.parse(value) as Record<string, unknown>).catch(() => undefined);
+  const droidVersion = await executableVersion("droid");
+  const expectedDroidVersion = process.env.HACKON_EXPECTED_DROID_VERSION ?? supportedDroidVersion;
+  const factoryAuthFile = await access(join(process.env.HOME ?? "", ".factory", "auth.v2.file")).then(() => true).catch(() => false);
+  const factoryAuthKey = await access(join(process.env.HOME ?? "", ".factory", "auth.v2.keyring")).then(() => true).catch(() => false);
+  const configuredModel = String(config?.model ?? process.env.HACKON_DROID_MODEL ?? "factory-default");
+  const settings = await readFile(join(process.env.HOME ?? "", ".factory", "settings.json"), "utf8")
+    .then((value) => JSON.parse(value) as { customModels?: Array<{ id?: string; model?: string; provider?: string }> })
+    .catch((): { customModels?: Array<{ id?: string; model?: string; provider?: string }> } => ({}));
+  const customModel = settings.customModels?.find((model) => model.id === configuredModel || model.model === configuredModel);
+  const byokProvider = customModel?.provider;
+  const byokConfigured = byokProvider === "openai" ? Boolean(process.env.OPENAI_API_KEY) :
+    byokProvider === "anthropic" ? Boolean(process.env.ANTHROPIC_API_KEY) : undefined;
+  const result = (pass: boolean, warning = false): "PASS" | "WARN" | "FAIL" => pass ? "PASS" : warning ? "WARN" : "FAIL";
   const checks: Record<string, unknown> = {
     node: process.versions.node,
-    git: await executableVersion("git"),
-    package: await access(join(workspace, "package.json")).then(() => true).catch(() => false),
-    hackonConfig: await access(join(workspace, ".hackon", "config.json")).then(() => true).catch(() => false),
-    droid: await executableVersion("droid"),
-    openAiAuthConfigured: Boolean(process.env.OPENAI_API_KEY),
-    adapter: String(config?.adapter ?? "factory-droid"),
+    factoryDroid: { status: result(droidVersion !== false && String(droidVersion).includes(expectedDroidVersion)), version: droidVersion, expectedVersion: expectedDroidVersion },
+    factoryAuthentication: { status: result(Boolean(process.env.FACTORY_API_KEY || factoryAuthFile || factoryAuthKey)), source: process.env.FACTORY_API_KEY ? "FACTORY_API_KEY" : factoryAuthFile || factoryAuthKey ? "Droid login/session" : "missing" },
+    byok: { status: byokConfigured === undefined ? "WARN" : result(byokConfigured, true), provider: byokProvider ?? "none", configuredModel },
+    git: { status: result((await executableVersion("git")) !== false) },
     projectProfile: profile,
+    worktreeCapability: { status: result(profile.monorepo !== undefined, true), availableForGitRepositories: true },
+    hackonConfig: { status: result(await access(join(workspace, ".hackon", "config.json")).then(() => true).catch(() => false)) },
+    adapter: String(config?.adapter ?? "factory-droid"),
   };
   console.log(JSON.stringify(checks, null, 2));
-  return checks.hackonConfig === true && checks.droid !== false && checks.openAiAuthConfigured === true ? 0 : 1;
+  const statuses = JSON.stringify(checks);
+  return statuses.includes('"status": "FAIL"') ? 1 : 0;
 }
 
 async function main(): Promise<number> {
@@ -133,7 +164,7 @@ async function main(): Promise<number> {
     return 0;
   }
   if (command === "skills") {
-    const skillsRoot = fileURLToPath(new URL("../skills", import.meta.url));
+    const skillsRoot = await skillsDirectory();
     const skills = (await readdir(skillsRoot, { withFileTypes: true }))
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
@@ -168,10 +199,24 @@ async function main(): Promise<number> {
     const store = new FileStateStore(workspace);
     const run = await store.load(runId);
     if (!run) return 1;
-    run.status = "cancelled";
-    run.updatedAt = new Date().toISOString();
-    await store.save(run);
-    console.log(`Cancelled ${runId}`);
+    await RunCancellation.request(workspace, runId, option(args, "--reason") ?? "cancelled by operator");
+    if (run.status !== "running") {
+      run.status = "cancelled";
+      run.cancellation = { requestedAt: new Date().toISOString(), reason: option(args, "--reason") ?? "cancelled by operator" };
+      run.updatedAt = new Date().toISOString();
+      await store.save(run);
+    }
+    console.log(run.status === "running" ? `Cancellation requested for ${runId}` : `Cancelled ${runId}`);
+    return 0;
+  }
+  if (command === "cleanup") {
+    const runId = args[1];
+    if (!runId) return 2;
+    const store = new FileStateStore(workspace);
+    const run = await store.load(runId);
+    if (!run) return 1;
+    await cleanupRunWorktree(workspace, run, args.includes("--force"));
+    console.log(`Cleaned up worktree for ${runId}`);
     return 0;
   }
 
@@ -221,7 +266,10 @@ async function main(): Promise<number> {
       if (!args.includes("--json")) console.error(`[${event.type}]${event.stageId ? ` ${event.stageId}` : ""}${event.message ? ` ${event.message}` : ""}`);
     },
   });
-  const result = await orchestrator.run(workflows.get(resolvedWorkflowId)!, objective, workspace, resumeId, { worktree: option(args, "--worktree") });
+  const result = await orchestrator.run(workflows.get(resolvedWorkflowId)!, objective, workspace, resumeId, {
+    worktree: option(args, "--worktree"),
+    inPlace: args.includes("--in-place"),
+  });
   console.log(args.includes("--json") ? JSON.stringify(result, null, 2) : `Run ${result.id}: ${result.status}`);
   return result.status === "succeeded" ? 0 : 1;
 }

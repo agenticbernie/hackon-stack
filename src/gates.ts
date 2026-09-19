@@ -27,8 +27,16 @@ export function evaluateGate(gate: QualityGate, run: RunState, stageId: string):
     case "command_exit_zero":
       passed = verifiedPass(command).some((item) => item.metadata.exitCode === 0);
       break;
+    case "optional_command_pass":
+      passed = command.some((item) => item.verification === "verified" &&
+        (item.metadata.available === false || (item.result === "pass" && item.metadata.exitCode === 0)));
+      break;
     case "tests_pass":
       passed = verifiedPass(all.filter((item) => item.kind === "TestEvidence")).some((item) => item.metadata.exitCode === 0);
+      break;
+    case "tests_fail":
+      passed = all.filter((item) => item.kind === "TestEvidence")
+        .some((item) => item.verification === "verified" && Number(item.metadata.exitCode) !== 0);
       break;
     case "build_pass":
       passed = verifiedPass(all.filter((item) => item.kind === "BuildEvidence")).some((item) => item.metadata.exitCode === 0);
@@ -56,6 +64,9 @@ export function evaluateGate(gate: QualityGate, run: RunState, stageId: string):
       message = `${metric?.metadata.metric ?? "metric"} ${operator} ${threshold}; observed ${value}`;
       break;
     }
+    case "metric_valid":
+      passed = verifiedPass(all.filter((item) => item.kind === "MetricEvidence")).some((item) => Number.isFinite(Number(item.metadata.value)) && typeof item.metadata.metric === "string");
+      break;
     case "coverage_threshold": {
       const coverageEvidence = all.find((item) => item.metadata.coverage !== undefined);
       const coverage = Number(coverageEvidence?.metadata.coverage);
@@ -71,6 +82,17 @@ export function evaluateGate(gate: QualityGate, run: RunState, stageId: string):
     case "agent_succeeded":
       passed = verifiedPass(all.filter((item) => item.kind === "AgentEvidence")).some((item) => item.metadata.agentSucceeded === true);
       break;
+    case "finding_lifecycle": {
+      const findings = all.flatMap((item) => {
+        const review = item.metadata.review as { findings?: Array<{ severity?: string; status?: string }> } | undefined;
+        return review?.findings ?? [];
+      });
+      const closed = findings.every((finding) => ["fixed", "invalidated", "accepted-risk"].includes(finding.status ?? ""));
+      const unsafeAcceptedRisk = findings.some((finding) => finding.severity === "BLOCKER" && finding.status === "accepted-risk");
+      const approval = verifiedPass(all.filter((item) => item.kind === "HumanApprovalEvidence")).some((item) => item.metadata.approved === true);
+      passed = findings.length === 0 || (closed && (!unsafeAcceptedRisk || approval));
+      break;
+    }
   }
   return { gateId: gate.id, type: gate.type, passed, blocking: gate.blocking, message: passed ? `PASS: ${message}` : `FAIL: ${message}` };
 }
