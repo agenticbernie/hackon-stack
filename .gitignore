@@ -1,0 +1,6 @@
+node_modules/
+dist/
+coverage/
+.hackon/runs/
+.DS_Store
+*.log

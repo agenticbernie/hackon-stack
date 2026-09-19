@@ -1,0 +1,45 @@
+{
+  "name": "hackon-stack",
+  "version": "0.1.0",
+  "description": "A host-neutral startup execution harness with real agent work, evidence, gates, and compound learning.",
+  "type": "module",
+  "bin": {
+    "hackon": "./dist/src/cli.js"
+  },
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "files": [
+    "dist",
+    "skills",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "SECURITY.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "docs:check": "node scripts/validate-docs.mjs",
+    "pack:check": "npm pack --dry-run",
+    "start": "node dist/cli.js",
+    "e2e:real": "HACKON_REAL_E2E=1 node --test dist/test/real-e2e.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "agents",
+    "startup",
+    "orchestration",
+    "evidence",
+    "workflow"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.3"
+  }
+}
