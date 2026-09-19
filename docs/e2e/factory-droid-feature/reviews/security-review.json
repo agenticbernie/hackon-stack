@@ -1,0 +1,44 @@
+{
+  "stageId": "security-review",
+  "result": "pass",
+  "verification": "verified",
+  "metadata": {
+    "output": "{\"approved\":true,\"summary\":\"Approved. Reviewed changes to app.js and app.test.js. Ran read-only git diff --check, git diff, and git status; no tests or builds were run. No injection, secret, unsafe command, path traversal, dependency, or privilege-boundary risks found. Remaining risk: runtime validation was intentionally not executed; .hackon/ is untracked harness metadata and contains no reviewed source changes.\",\"findings\":[]}",
+    "blockerCount": 0,
+    "approved": true,
+    "validSchema": true,
+    "review": {
+      "approved": true,
+      "summary": "Approved. Reviewed changes to app.js and app.test.js. Ran read-only git diff --check, git diff, and git status; no tests or builds were run. No injection, secret, unsafe command, path traversal, dependency, or privilege-boundary risks found. Remaining risk: runtime validation was intentionally not executed; .hackon/ is untracked harness metadata and contains no reviewed source changes.",
+      "findings": []
+    },
+    "agentSucceeded": true,
+    "sessionId": "c2ce9ef2-bc86-4347-bd1c-2c93aac4949d",
+    "adapterMetadata": {
+      "adapter": "factory-droid",
+      "autonomy": "default",
+      "toolRestrictions": [
+        "Read",
+        "Grep",
+        "Glob",
+        "LS",
+        "Execute"
+      ],
+      "workspace": "/tmp/hackon-factory-feature-su2Gka",
+      "structuredOutput": true,
+      "usage": {
+        "input_tokens": 11099,
+        "output_tokens": 969,
+        "cache_read_input_tokens": 20325,
+        "cache_creation_input_tokens": 0,
+        "factory_credits": 15158,
+        "thinking_tokens": 570,
+        "ttft_ms": 1167
+      },
+      "cliVersion": "0.222.0",
+      "exitCode": 0,
+      "readOnlyViolation": false,
+      "timedOut": false
+    }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "stageId": "architecture-review",
+  "result": "pass",
+  "verification": "verified",
+  "metadata": {
+    "output": "{\"approved\":true,\"summary\":\"Approved. app.js adds a pure, stateless reverseWords export; app.test.js covers empty input and multiple-space normalization. Reviewed current diff and whitespace validation only; no tests or builds were run. Remaining risk: runtime test execution was intentionally not performed under read-only permissions.\",\"findings\":[]}",
+    "blockerCount": 0,
+    "approved": true,
+    "validSchema": true,
+    "review": {
+      "approved": true,
+      "summary": "Approved. app.js adds a pure, stateless reverseWords export; app.test.js covers empty input and multiple-space normalization. Reviewed current diff and whitespace validation only; no tests or builds were run. Remaining risk: runtime test execution was intentionally not performed under read-only permissions.",
+      "findings": []
+    },
+    "agentSucceeded": true,
+    "sessionId": "fb498a05-dad8-4ea4-87a1-0fb356dba96d",
+    "adapterMetadata": {
+      "adapter": "factory-droid",
+      "autonomy": "default",
+      "toolRestrictions": [
+        "Read",
+        "Grep",
+        "Glob",
+        "LS",
+        "Execute"
+      ],
+      "workspace": "/tmp/hackon-factory-feature-su2Gka",
+      "structuredOutput": true,
+      "usage": {
+        "input_tokens": 10566,
+        "output_tokens": 666,
+        "cache_read_input_tokens": 9650,
+        "cache_creation_input_tokens": 0,
+        "factory_credits": 12422,
+        "thinking_tokens": 377,
+        "ttft_ms": 1080
+      },
+      "cliVersion": "0.222.0",
+      "exitCode": 0,
+      "readOnlyViolation": false,
+      "timedOut": false
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "tests": [
+    {
+      "id": "0a4db5df-0fe8-40c0-91f4-0b35a429d389",
+      "timestamp": "2026-09-19T06:28:38.050Z",
+      "verification": "verified",
+      "kind": "TestEvidence",
+      "producer": "hackon-tool-runner",
+      "stageId": "final-verification",
+      "source": "npm run test",
+      "result": "pass",
+      "metadata": {
+        "command": "npm run test",
+        "cwd": "/tmp/hackon-factory-feature-su2Gka",
+        "exitCode": 0,
+        "stdout": "\n> test\n> node --test\n\n✔ slugify (2.290131ms)\n✔ reverseWords returns an empty string for empty input (0.665291ms)\n✔ reverseWords reverses words and normalizes multiple spaces (0.529854ms)\nℹ tests 3\nℹ suites 0\nℹ pass 3\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 159.579964\n",
+        "stderr": "",
+        "durationMs": 424,
+        "timestamp": "2026-09-19T06:28:37.626Z",
+        "timedOut": false
+      }
+    }
+  ],
+  "build": [
+    {
+      "id": "e5020f3e-bf6f-428e-8bf4-704930cf60ed",
+      "timestamp": "2026-09-19T06:28:38.312Z",
+      "verification": "verified",
+      "kind": "BuildEvidence",
+      "producer": "hackon-tool-runner",
+      "stageId": "build-verification",
+      "source": "npm run build",
+      "result": "pass",
+      "metadata": {
+        "command": "npm run build",
+        "cwd": "/tmp/hackon-factory-feature-su2Gka",
+        "exitCode": 0,
+        "stdout": "\n> build\n> node --check app.js\n\n",
+        "stderr": "",
+        "durationMs": 244,
+        "timestamp": "2026-09-19T06:28:38.068Z",
+        "timedOut": false
+      }
+    }
+  ]
+}

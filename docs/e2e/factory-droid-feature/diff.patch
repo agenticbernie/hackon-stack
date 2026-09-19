@@ -1,0 +1,29 @@
+diff --git a/app.js b/app.js
+index 3676574..6f3a01d 100644
+--- a/app.js
++++ b/app.js
+@@ -1 +1,5 @@
+ export function slugify(value) { return value.trim().toLowerCase().replaceAll(' ', '-'); }
++
++export function reverseWords(value) {
++  return value.trim().split(/\s+/).reverse().join(' ');
++}
+diff --git a/app.test.js b/app.test.js
+index de295d5..ff8585e 100644
+--- a/app.test.js
++++ b/app.test.js
+@@ -1 +1,13 @@
+-import test from 'node:test'; import assert from 'node:assert/strict'; import { slugify } from './app.js'; test('slugify', () => assert.equal(slugify('Hello World'), 'hello-world'));
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { reverseWords, slugify } from './app.js';
++
++test('slugify', () => assert.equal(slugify('Hello World'), 'hello-world'));
++
++test('reverseWords returns an empty string for empty input', () => {
++  assert.equal(reverseWords(''), '');
++});
++
++test('reverseWords reverses words and normalizes multiple spaces', () => {
++  assert.equal(reverseWords('hello   world  again'), 'again world hello');
++});

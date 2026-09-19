@@ -1,0 +1,44 @@
+{
+  "stageId": "code-review",
+  "result": "pass",
+  "verification": "verified",
+  "metadata": {
+    "output": "{\"approved\":true,\"summary\":\"Approved. Reviewed changed files app.js and app.test.js. reverseWords correctly returns an empty string for empty input and reverses whitespace-separated words while normalizing multiple spaces. Commands run: none. Remaining risk: tests were not executed due to read-only review permissions.\",\"findings\":[]}",
+    "blockerCount": 0,
+    "approved": true,
+    "validSchema": true,
+    "review": {
+      "approved": true,
+      "summary": "Approved. Reviewed changed files app.js and app.test.js. reverseWords correctly returns an empty string for empty input and reverses whitespace-separated words while normalizing multiple spaces. Commands run: none. Remaining risk: tests were not executed due to read-only review permissions.",
+      "findings": []
+    },
+    "agentSucceeded": true,
+    "sessionId": "eb047717-cdd3-4e5c-99ff-36ff2acac7b6",
+    "adapterMetadata": {
+      "adapter": "factory-droid",
+      "autonomy": "default",
+      "toolRestrictions": [
+        "Read",
+        "Grep",
+        "Glob",
+        "LS",
+        "Execute"
+      ],
+      "workspace": "/tmp/hackon-factory-feature-su2Gka",
+      "structuredOutput": true,
+      "usage": {
+        "input_tokens": 10142,
+        "output_tokens": 577,
+        "cache_read_input_tokens": 9648,
+        "cache_creation_input_tokens": 0,
+        "factory_credits": 11656,
+        "thinking_tokens": 403,
+        "ttft_ms": 1456
+      },
+      "cliVersion": "0.222.0",
+      "exitCode": 0,
+      "readOnlyViolation": false,
+      "timedOut": false
+    }
+  }
+}

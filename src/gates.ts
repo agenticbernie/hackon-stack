@@ -68,6 +68,9 @@ export function evaluateGate(gate: QualityGate, run: RunState, stageId: string):
     case "security_scan":
       passed = verifiedPass(all).some((item) => item.metadata.vulnerabilities === 0);
       break;
+    case "agent_succeeded":
+      passed = verifiedPass(all.filter((item) => item.kind === "AgentEvidence")).some((item) => item.metadata.agentSucceeded === true);
+      break;
   }
   return { gateId: gate.id, type: gate.type, passed, blocking: gate.blocking, message: passed ? `PASS: ${message}` : `FAIL: ${message}` };
 }

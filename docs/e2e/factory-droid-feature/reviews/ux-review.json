@@ -1,0 +1,44 @@
+{
+  "stageId": "ux-review",
+  "result": "pass",
+  "verification": "verified",
+  "metadata": {
+    "output": "{\"approved\":true,\"summary\":\"Approved. Changed files reviewed: app.js and app.test.js. The implementation meets the empty-input and multiple-space acceptance criteria. Commands run: read-only git diff/status inspection; no tests or builds were run under read-only permissions. Remaining risk: behavior was not executed in this review.\",\"findings\":[]}",
+    "blockerCount": 0,
+    "approved": true,
+    "validSchema": true,
+    "review": {
+      "approved": true,
+      "summary": "Approved. Changed files reviewed: app.js and app.test.js. The implementation meets the empty-input and multiple-space acceptance criteria. Commands run: read-only git diff/status inspection; no tests or builds were run under read-only permissions. Remaining risk: behavior was not executed in this review.",
+      "findings": []
+    },
+    "agentSucceeded": true,
+    "sessionId": "d5013f6f-27e7-4989-b756-719ada35e51d",
+    "adapterMetadata": {
+      "adapter": "factory-droid",
+      "autonomy": "default",
+      "toolRestrictions": [
+        "Read",
+        "Grep",
+        "Glob",
+        "LS",
+        "Execute"
+      ],
+      "workspace": "/tmp/hackon-factory-feature-su2Gka",
+      "structuredOutput": true,
+      "usage": {
+        "input_tokens": 10566,
+        "output_tokens": 797,
+        "cache_read_input_tokens": 9652,
+        "cache_creation_input_tokens": 0,
+        "factory_credits": 13051,
+        "thinking_tokens": 519,
+        "ttft_ms": 1127.5
+      },
+      "cliVersion": "0.222.0",
+      "exitCode": 0,
+      "readOnlyViolation": false,
+      "timedOut": false
+    }
+  }
+}

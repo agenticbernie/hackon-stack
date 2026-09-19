@@ -10,6 +10,11 @@ on:
         required: true
         default: false
         type: boolean
+      run_factory_e2e:
+        description: "Run the canonical Factory Droid E2E (requires droid and OPENAI_API_KEY)"
+        required: true
+        default: false
+        type: boolean
 
 jobs:
   verify:
@@ -44,3 +49,37 @@ jobs:
       - name: Require OpenCode
         run: command -v opencode
       - run: npm run e2e:real
+
+  e2e-factory:
+    name: Real E2E (Factory Droid, manual)
+    if: github.event_name == 'workflow_dispatch' && inputs.run_factory_e2e == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Require Factory Droid
+        run: command -v droid
+      - name: Configure OpenAI BYOK model
+        run: |
+          mkdir -p "$HOME/.factory"
+          cat > "$HOME/.factory/settings.json" <<'JSON'
+          {
+            "customModels": [{
+              "model": "gpt-5.6-terra",
+              "id": "custom:gpt-5.6-terra-1",
+              "displayName": "HackOn OpenAI",
+              "baseUrl": "https://api.openai.com/v1",
+              "apiKey": "${OPENAI_API_KEY}",
+              "provider": "openai",
+              "maxOutputTokens": 128000
+            }]
+          }
+          JSON
+      - run: npm run e2e:factory
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          HACKON_DROID_MODEL: custom:gpt-5.6-terra-1

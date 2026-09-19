@@ -1,14 +1,20 @@
 #!/usr/bin/env node
-import { access, constants, mkdir, writeFile } from "node:fs/promises";
+import { access, constants, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { builtInWorkflows } from "./workflows.js";
 import { FileKnowledgeStore, FileStateStore } from "./state.js";
-import { OpenCodeAdapter } from "./adapters.js";
+import { FactoryDroidAdapter, OpenCodeAdapter } from "./adapters.js";
 import { SafeToolRunner } from "./tool-runner.js";
 import { Orchestrator } from "./orchestrator.js";
+import { detectProjectProfile } from "./project-profile.js";
+import type { AgentAdapter } from "./domain.js";
 
 const version = "0.1.0";
 const workflows = builtInWorkflows();
+const execFileAsync = promisify(execFile);
 
 function help(): void {
   console.log(`HackOn Stack ${version}
@@ -17,6 +23,13 @@ Usage:
   hackon init
   hackon doctor
   hackon status
+  hackon inspect <run-id>
+  hackon evidence <run-id>
+  hackon resume <run-id>
+  hackon cancel <run-id>
+  hackon workflows
+  hackon skills
+  hackon knowledge search <query>
   hackon run <workflow> --objective "..."
   hackon run <workflow> --objective "..." --resume <run-id>
   hackon discover|research|product|plan|build|review|ship|grow|learn --objective "..."
@@ -26,6 +39,11 @@ Options:
   --objective <text>       Natural-language objective
   --resume <run-id>        Resume a persisted run
   --json                   Emit machine-readable output
+  --adapter <id>           factory-droid (default) or opencode
+  --adapter-command <cmd>  Override the selected adapter executable
+  --model <id>             Factory Droid model or configured BYOK model
+  --worktree <name>        Run in an isolated Droid/Git worktree
+  --dry-run                Show the selected workflow and profile without executing
   --help, --version
 
 Workflows:
@@ -44,29 +62,45 @@ async function init(workspace: string): Promise<void> {
   await mkdir(join(dir, "learning"), { recursive: true });
   await writeFile(join(dir, "config.json"), JSON.stringify({
     schemaVersion: 1,
-    adapter: "opencode",
-    command: process.env.HACKON_OPENCODE_COMMAND ?? "opencode",
+    adapter: "factory-droid",
+    command: process.env.HACKON_DROID_COMMAND ?? "droid",
+    model: process.env.HACKON_DROID_MODEL,
+    auth: { env: "OPENAI_API_KEY" },
     permissions: { read: true, write: true, execute: true, network: false, external: false },
   }, null, 2));
   console.log(`Initialized HackOn in ${workspace}`);
 }
 
 async function doctor(workspace: string): Promise<number> {
-  const executableOnPath = async (command: string): Promise<boolean> => {
+  const executableVersion = async (command: string): Promise<string | false> => {
     for (const directory of (process.env.PATH ?? "").split(":")) {
       if (!directory) continue;
-      if (await access(join(directory, command), constants.X_OK).then(() => true).catch(() => false)) return true;
+      const path = join(directory, command);
+      if (await access(path, constants.X_OK).then(() => true).catch(() => false)) {
+        try {
+          const result = await execFileAsync(path, ["--version"], { env: process.env });
+          return result.stdout.trim().slice(0, 200);
+        } catch {
+          return "installed (version unavailable)";
+        }
+      }
     }
     return false;
   };
-  const checks: Record<string, string | boolean> = {
+  const profile = await detectProjectProfile(workspace);
+  const config = await readFile(join(workspace, ".hackon", "config.json"), "utf8").then((value) => JSON.parse(value) as Record<string, unknown>).catch(() => undefined);
+  const checks: Record<string, unknown> = {
     node: process.versions.node,
+    git: await executableVersion("git"),
     package: await access(join(workspace, "package.json")).then(() => true).catch(() => false),
     hackonConfig: await access(join(workspace, ".hackon", "config.json")).then(() => true).catch(() => false),
-    opencode: await executableOnPath("opencode"),
+    droid: await executableVersion("droid"),
+    openAiAuthConfigured: Boolean(process.env.OPENAI_API_KEY),
+    adapter: String(config?.adapter ?? "factory-droid"),
+    projectProfile: profile,
   };
   console.log(JSON.stringify(checks, null, 2));
-  return checks.hackonConfig === true ? 0 : 1;
+  return checks.hackonConfig === true && checks.droid !== false && checks.openAiAuthConfigured === true ? 0 : 1;
 }
 
 async function main(): Promise<number> {
@@ -93,24 +127,91 @@ async function main(): Promise<number> {
     console.log(output || "No HackOn runs found.");
     return 0;
   }
+  if (command === "workflows") {
+    console.log(args.includes("--json") ? JSON.stringify([...workflows.values()], null, 2) :
+      [...workflows.values()].map((workflow) => `${workflow.id}: ${workflow.description}`).join("\n"));
+    return 0;
+  }
+  if (command === "skills") {
+    const skillsRoot = fileURLToPath(new URL("../skills", import.meta.url));
+    const skills = (await readdir(skillsRoot, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+    console.log(args.includes("--json") ? JSON.stringify(skills) : skills.join("\n"));
+    return 0;
+  }
+  if (command === "inspect" || command === "evidence") {
+    const runId = args[1];
+    if (!runId) {
+      console.error(`Missing run ID for ${command}`);
+      return 2;
+    }
+    const run = await new FileStateStore(workspace).load(runId);
+    if (!run) {
+      console.error(`Run not found: ${runId}`);
+      return 1;
+    }
+    const value = command === "evidence" ? run.evidence : run;
+    console.log(args.includes("--json") ? JSON.stringify(value, null, 2) : JSON.stringify(value, null, 2));
+    return 0;
+  }
+  if (command === "knowledge" && args[1] === "search") {
+    const query = args.slice(2).join(" ");
+    const results = await new FileKnowledgeStore(workspace).search(query);
+    console.log(args.includes("--json") ? JSON.stringify(results, null, 2) : results.map((result) => `${result.score} ${result.title}`).join("\n"));
+    return 0;
+  }
+  if (command === "cancel") {
+    const runId = args[1];
+    if (!runId) return 2;
+    const store = new FileStateStore(workspace);
+    const run = await store.load(runId);
+    if (!run) return 1;
+    run.status = "cancelled";
+    run.updatedAt = new Date().toISOString();
+    await store.save(run);
+    console.log(`Cancelled ${runId}`);
+    return 0;
+  }
 
   const aliases: Record<string, string> = {
     discover: "idea-to-product", research: "idea-to-product", product: "product-improvement",
     plan: "feature-development", build: "feature-development", review: "feature-development",
     ship: "launch", grow: "growth-experiment", learn: "weekly-founder-review",
   };
-  const workflowId = command === "run" ? args[1] : aliases[command];
-  if (!workflowId || !workflows.has(workflowId)) {
+  const workflowId = command === "resume" ? undefined : command === "run" ? args[1] : aliases[command];
+  const resumeId = option(args, "--resume") ?? (command === "resume" ? args[1] : undefined);
+  const resumeRun = resumeId ? await new FileStateStore(workspace).load(resumeId) : undefined;
+  const resolvedWorkflowId = resumeRun?.workflowId ?? workflowId;
+  if (!resolvedWorkflowId || !workflows.has(resolvedWorkflowId)) {
     console.error(`Unknown command or workflow: ${command}`);
     help();
     return 2;
   }
-  const objective = option(args, "--objective") ?? (command === "run" ? undefined : args.slice(1).filter((arg) => !arg.startsWith("--")).join(" "));
+  const objective = option(args, "--objective") ?? resumeRun?.objective ?? (command === "run" ? undefined : args.slice(1).filter((arg) => !arg.startsWith("--")).join(" "));
   if (!objective) {
     console.error("Missing --objective. A natural-language objective is required.");
     return 2;
   }
-  const adapter = new OpenCodeAdapter(option(args, "--adapter-command"));
+  if (args.includes("--dry-run")) {
+    console.log(JSON.stringify({ workflow: resolvedWorkflowId, objective, projectProfile: await detectProjectProfile(workspace) }, null, 2));
+    return 0;
+  }
+  const adapterId = option(args, "--adapter") ?? "factory-droid";
+  const runtimeConfig = await readFile(join(workspace, ".hackon", "config.json"), "utf8")
+    .then((value) => JSON.parse(value) as { adapter?: string; command?: string; model?: string })
+    .catch((): { adapter?: string; command?: string; model?: string } => ({}));
+  const configuredAdapter = option(args, "--adapter") ?? runtimeConfig.adapter ?? adapterId;
+  const configuredCommand = option(args, "--adapter-command") ?? runtimeConfig.command;
+  const configuredModel = option(args, "--model") ?? runtimeConfig.model;
+  let adapter: AgentAdapter;
+  if (configuredAdapter === "opencode") adapter = new OpenCodeAdapter(configuredCommand);
+  else if (configuredAdapter === "factory-droid") adapter = new FactoryDroidAdapter(configuredCommand, configuredModel);
+  else {
+    console.error(`Unknown adapter: ${configuredAdapter}`);
+    return 2;
+  }
   const orchestrator = new Orchestrator({
     tools: new SafeToolRunner(workspace),
     adapter,
@@ -120,7 +221,7 @@ async function main(): Promise<number> {
       if (!args.includes("--json")) console.error(`[${event.type}]${event.stageId ? ` ${event.stageId}` : ""}${event.message ? ` ${event.message}` : ""}`);
     },
   });
-  const result = await orchestrator.run(workflows.get(workflowId)!, objective, workspace, option(args, "--resume"));
+  const result = await orchestrator.run(workflows.get(resolvedWorkflowId)!, objective, workspace, resumeId, { worktree: option(args, "--worktree") });
   console.log(args.includes("--json") ? JSON.stringify(result, null, 2) : `Run ${result.id}: ${result.status}`);
   return result.status === "succeeded" ? 0 : 1;
 }

@@ -39,7 +39,8 @@ export type GateType =
   | "human_approval"
   | "metric_threshold"
   | "coverage_threshold"
-  | "security_scan";
+  | "security_scan"
+  | "agent_succeeded";
 
 export type QualityGate = {
   id: string;
@@ -57,6 +58,10 @@ export type AgentTask = {
   workspace: string;
   permissions: Permission[];
   context: ContextBundle;
+  autonomy?: "default" | "low" | "medium" | "high";
+  sessionId?: string;
+  worktree?: string;
+  toolRestrictions?: string[];
 };
 
 export type AgentResult = {
@@ -65,6 +70,36 @@ export type AgentResult = {
   error?: string;
   source: string;
   durationMs: number;
+  sessionId?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type AdapterCapabilities = {
+  id: string;
+  version?: string;
+  autonomyLevels: Array<"default" | "low" | "medium" | "high">;
+  sessions: boolean;
+  worktrees: boolean;
+  structuredOutput: boolean;
+  toolRestrictions: boolean;
+};
+
+export type ReviewFinding = {
+  id: string;
+  severity: "BLOCKER" | "MAJOR" | "MINOR" | "NOTE";
+  category: string;
+  file?: string;
+  line?: number;
+  finding: string;
+  evidence: string;
+  recommendedFix: string;
+  status?: "open" | "fixed" | "invalidated" | "accepted-risk";
+};
+
+export type ReviewResult = {
+  approved: boolean;
+  summary: string;
+  findings: ReviewFinding[];
 };
 
 export type StageDefinition = {
@@ -115,6 +150,11 @@ export type RunState = {
   evidence: Evidence[];
   selectedContext: string[];
   stageBaselines: Record<string, { workspaceFingerprint: string; artifactFingerprint: string; capturedAt: string }>;
+  contextSelections?: ContextSelection[];
+  knowledgeInfluence?: KnowledgeInfluence[];
+  adapterSessions?: Record<string, { adapter: string; sessionId: string; stageId: string; createdAt: string; resumedFrom?: string }>;
+  projectProfile?: ProjectProfile;
+  worktreePath?: string;
   error?: string;
 };
 
@@ -123,6 +163,43 @@ export type ContextBundle = {
   files: Array<{ path: string; content: string; trust: "repository-untrusted" | "system-generated" }>;
   knowledge: Array<{ id: string; title: string; content: string; score: number }>;
   warnings: string[];
+  selections?: ContextSelection[];
+};
+
+export type ContextSelection = {
+  path: string;
+  source: "repository" | "knowledge";
+  trust: "repository-untrusted" | "system-generated";
+  reason: string;
+  relevanceScore: number;
+  approximateSize: number;
+  stageId?: string;
+};
+
+export type KnowledgeInfluence = {
+  knowledgeId: string;
+  stageId?: string;
+  selectionReason: string;
+  influence: string;
+  recordedAt: string;
+};
+
+export type ProjectProfile = {
+  root: string;
+  languages: string[];
+  frameworks: string[];
+  packageManager?: "npm" | "pnpm" | "yarn" | "bun";
+  monorepo: boolean;
+  commands: {
+    test?: string[];
+    build?: string[];
+    lint?: string[];
+    typecheck?: string[];
+    security?: string[];
+  };
+  workingDirectories: string[];
+  detectedFrom: string[];
+  overrides: string[];
 };
 
 export type StageContext = {
@@ -161,6 +238,8 @@ export interface ToolExecutor {
 export interface AgentAdapter {
   readonly id: string;
   run(task: AgentTask): Promise<AgentResult>;
+  resume?(sessionId: string, task: AgentTask): Promise<AgentResult>;
+  capabilities(): AdapterCapabilities;
 }
 
 export interface StateStore {
@@ -199,5 +278,8 @@ export function initialRun(workflow: WorkflowDefinition, objective: string, work
     evidence: [],
     selectedContext: [],
     stageBaselines: {},
+    contextSelections: [],
+    knowledgeInfluence: [],
+    adapterSessions: {},
   };
 }

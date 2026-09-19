@@ -1,0 +1,893 @@
+{
+  "id": "512c1f29-b670-4153-b6ed-07389448e9a6",
+  "workflowId": "feature-development",
+  "objective": "Add reverseWords that reverses whitespace-separated words, with tests for empty input and multiple spaces.",
+  "workspace": "/tmp/hackon-factory-feature-su2Gka",
+  "status": "succeeded",
+  "createdAt": "2026-09-19T06:25:58.046Z",
+  "updatedAt": "2026-09-19T06:29:09.552Z",
+  "stages": {
+    "specify": {
+      "id": "specify",
+      "status": "succeeded",
+      "attempts": 1,
+      "startedAt": "2026-09-19T06:25:58.099Z",
+      "gateResults": [
+        {
+          "gateId": "specify-agent-succeeded",
+          "type": "agent_succeeded",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Agent execution completed successfully"
+        },
+        {
+          "gateId": "spec-file",
+          "type": "artifact_exists",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: A specification artifact exists"
+        }
+      ],
+      "completedAt": "2026-09-19T06:26:24.825Z"
+    },
+    "feature-contract": {
+      "id": "feature-contract",
+      "status": "succeeded",
+      "attempts": 1,
+      "startedAt": "2026-09-19T06:26:24.828Z",
+      "gateResults": [
+        {
+          "gateId": "feature-contract-agent-succeeded",
+          "type": "agent_succeeded",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Agent execution completed successfully"
+        },
+        {
+          "gateId": "feature-contract-agent",
+          "type": "agent_succeeded",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Specialized domain analysis completed successfully"
+        }
+      ],
+      "completedAt": "2026-09-19T06:26:46.098Z"
+    },
+    "plan": {
+      "id": "plan",
+      "status": "succeeded",
+      "attempts": 1,
+      "startedAt": "2026-09-19T06:26:46.101Z",
+      "gateResults": [
+        {
+          "gateId": "plan-agent-succeeded",
+          "type": "agent_succeeded",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Agent execution completed successfully"
+        }
+      ],
+      "completedAt": "2026-09-19T06:27:15.671Z"
+    },
+    "implement": {
+      "id": "implement",
+      "status": "succeeded",
+      "attempts": 1,
+      "startedAt": "2026-09-19T06:27:15.674Z",
+      "gateResults": [
+        {
+          "gateId": "implement-agent-succeeded",
+          "type": "agent_succeeded",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Agent execution completed successfully"
+        },
+        {
+          "gateId": "implementation-diff",
+          "type": "diff_exists",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Implementation produced a repository diff"
+        }
+      ],
+      "completedAt": "2026-09-19T06:27:34.021Z"
+    },
+    "tests": {
+      "id": "tests",
+      "status": "succeeded",
+      "attempts": 1,
+      "startedAt": "2026-09-19T06:27:34.025Z",
+      "gateResults": [
+        {
+          "gateId": "tests-pass",
+          "type": "tests_pass",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Project tests exit successfully"
+        }
+      ],
+      "completedAt": "2026-09-19T06:27:34.551Z"
+    },
+    "code-review": {
+      "id": "code-review",
+      "status": "succeeded",
+      "attempts": 1,
+      "startedAt": "2026-09-19T06:27:34.560Z",
+      "gateResults": [
+        {
+          "gateId": "code-review-approved",
+          "type": "review_approved",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Reviewer explicitly approved the work"
+        },
+        {
+          "gateId": "code-review-no-blockers",
+          "type": "no_blocker_findings",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Reviewer found no blocker findings"
+        }
+      ],
+      "completedAt": "2026-09-19T06:27:55.415Z"
+    },
+    "security-review": {
+      "id": "security-review",
+      "status": "succeeded",
+      "attempts": 1,
+      "startedAt": "2026-09-19T06:27:34.560Z",
+      "gateResults": [
+        {
+          "gateId": "security-review-approved",
+          "type": "review_approved",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Reviewer explicitly approved the work"
+        },
+        {
+          "gateId": "security-review-no-blockers",
+          "type": "no_blocker_findings",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Reviewer found no blocker findings"
+        }
+      ],
+      "completedAt": "2026-09-19T06:27:56.320Z"
+    },
+    "architecture-review": {
+      "id": "architecture-review",
+      "status": "succeeded",
+      "attempts": 1,
+      "startedAt": "2026-09-19T06:27:34.560Z",
+      "gateResults": [
+        {
+          "gateId": "architecture-review-approved",
+          "type": "review_approved",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Reviewer explicitly approved the work"
+        },
+        {
+          "gateId": "architecture-review-no-blockers",
+          "type": "no_blocker_findings",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Reviewer found no blocker findings"
+        }
+      ],
+      "completedAt": "2026-09-19T06:27:54.212Z"
+    },
+    "ux-review": {
+      "id": "ux-review",
+      "status": "succeeded",
+      "attempts": 1,
+      "startedAt": "2026-09-19T06:27:34.561Z",
+      "gateResults": [
+        {
+          "gateId": "ux-review-approved",
+          "type": "review_approved",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Reviewer explicitly approved the work"
+        },
+        {
+          "gateId": "ux-review-no-blockers",
+          "type": "no_blocker_findings",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Reviewer found no blocker findings"
+        }
+      ],
+      "completedAt": "2026-09-19T06:27:56.787Z"
+    },
+    "consolidate": {
+      "id": "consolidate",
+      "status": "succeeded",
+      "attempts": 1,
+      "startedAt": "2026-09-19T06:27:56.789Z",
+      "gateResults": [
+        {
+          "gateId": "consolidate-agent-succeeded",
+          "type": "agent_succeeded",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Agent execution completed successfully"
+        },
+        {
+          "gateId": "review-decision",
+          "type": "review_approved",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Consolidated review has no blocking findings"
+        },
+        {
+          "gateId": "review-no-blockers",
+          "type": "no_blocker_findings",
+          "passed": true,
+          "blocking": false,
+          "message": "PASS: All independent reviews have no blockers"
+        }
+      ],
+      "completedAt": "2026-09-19T06:28:15.807Z"
+    },
+    "fix": {
+      "id": "fix",
+      "status": "succeeded",
+      "attempts": 1,
+      "startedAt": "2026-09-19T06:28:15.809Z",
+      "gateResults": [
+        {
+          "gateId": "fix-agent-succeeded",
+          "type": "agent_succeeded",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Agent execution completed successfully"
+        },
+        {
+          "gateId": "fix-diff",
+          "type": "diff_exists",
+          "passed": false,
+          "blocking": false,
+          "message": "FAIL: Fix stage may produce a diff"
+        }
+      ],
+      "completedAt": "2026-09-19T06:28:37.618Z"
+    },
+    "final-verification": {
+      "id": "final-verification",
+      "status": "succeeded",
+      "attempts": 1,
+      "startedAt": "2026-09-19T06:28:37.621Z",
+      "gateResults": [
+        {
+          "gateId": "final-tests-pass",
+          "type": "tests_pass",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Final tests exit successfully"
+        }
+      ],
+      "completedAt": "2026-09-19T06:28:38.050Z"
+    },
+    "build-verification": {
+      "id": "build-verification",
+      "status": "succeeded",
+      "attempts": 1,
+      "startedAt": "2026-09-19T06:28:38.057Z",
+      "gateResults": [
+        {
+          "gateId": "build-pass",
+          "type": "build_pass",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Production build exits successfully"
+        }
+      ],
+      "completedAt": "2026-09-19T06:28:38.312Z"
+    },
+    "learn": {
+      "id": "learn",
+      "status": "succeeded",
+      "attempts": 1,
+      "startedAt": "2026-09-19T06:28:38.317Z",
+      "gateResults": [
+        {
+          "gateId": "learn-agent-succeeded",
+          "type": "agent_succeeded",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: Agent execution completed successfully"
+        },
+        {
+          "gateId": "learning-artifact",
+          "type": "artifact_exists",
+          "passed": true,
+          "blocking": true,
+          "message": "PASS: A durable learning artifact exists"
+        }
+      ],
+      "completedAt": "2026-09-19T06:29:09.550Z"
+    }
+  },
+  "selectedContext": [
+    "package.json",
+    "app.js",
+    "app.test.js"
+  ],
+  "stageBaselines": {
+    "specify": {
+      "workspaceFingerprint": "0d29630e70f020339f1475373263aca5c809f2ae1f7765f0b47e624f55c04ccd",
+      "artifactFingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "capturedAt": "2026-09-19T06:25:58.099Z"
+    },
+    "feature-contract": {
+      "workspaceFingerprint": "0d29630e70f020339f1475373263aca5c809f2ae1f7765f0b47e624f55c04ccd",
+      "artifactFingerprint": "a54dcaea9a3209229513d2978bfd47fe3f42c0ef9abeaef326a0c0bbdce2838e",
+      "capturedAt": "2026-09-19T06:26:24.828Z"
+    },
+    "plan": {
+      "workspaceFingerprint": "0d29630e70f020339f1475373263aca5c809f2ae1f7765f0b47e624f55c04ccd",
+      "artifactFingerprint": "a54dcaea9a3209229513d2978bfd47fe3f42c0ef9abeaef326a0c0bbdce2838e",
+      "capturedAt": "2026-09-19T06:26:46.101Z"
+    },
+    "implement": {
+      "workspaceFingerprint": "0d29630e70f020339f1475373263aca5c809f2ae1f7765f0b47e624f55c04ccd",
+      "artifactFingerprint": "a54dcaea9a3209229513d2978bfd47fe3f42c0ef9abeaef326a0c0bbdce2838e",
+      "capturedAt": "2026-09-19T06:27:15.674Z"
+    },
+    "tests": {
+      "workspaceFingerprint": "a9500268bf140e4a0b51393941a8933e3d967f3bf88d88c3bb187dfef7a2e964",
+      "artifactFingerprint": "a54dcaea9a3209229513d2978bfd47fe3f42c0ef9abeaef326a0c0bbdce2838e",
+      "capturedAt": "2026-09-19T06:27:34.025Z"
+    },
+    "code-review": {
+      "workspaceFingerprint": "a9500268bf140e4a0b51393941a8933e3d967f3bf88d88c3bb187dfef7a2e964",
+      "artifactFingerprint": "a54dcaea9a3209229513d2978bfd47fe3f42c0ef9abeaef326a0c0bbdce2838e",
+      "capturedAt": "2026-09-19T06:27:34.560Z"
+    },
+    "security-review": {
+      "workspaceFingerprint": "a9500268bf140e4a0b51393941a8933e3d967f3bf88d88c3bb187dfef7a2e964",
+      "artifactFingerprint": "a54dcaea9a3209229513d2978bfd47fe3f42c0ef9abeaef326a0c0bbdce2838e",
+      "capturedAt": "2026-09-19T06:27:34.560Z"
+    },
+    "architecture-review": {
+      "workspaceFingerprint": "a9500268bf140e4a0b51393941a8933e3d967f3bf88d88c3bb187dfef7a2e964",
+      "artifactFingerprint": "a54dcaea9a3209229513d2978bfd47fe3f42c0ef9abeaef326a0c0bbdce2838e",
+      "capturedAt": "2026-09-19T06:27:34.560Z"
+    },
+    "ux-review": {
+      "workspaceFingerprint": "a9500268bf140e4a0b51393941a8933e3d967f3bf88d88c3bb187dfef7a2e964",
+      "artifactFingerprint": "a54dcaea9a3209229513d2978bfd47fe3f42c0ef9abeaef326a0c0bbdce2838e",
+      "capturedAt": "2026-09-19T06:27:34.561Z"
+    },
+    "consolidate": {
+      "workspaceFingerprint": "a9500268bf140e4a0b51393941a8933e3d967f3bf88d88c3bb187dfef7a2e964",
+      "artifactFingerprint": "a54dcaea9a3209229513d2978bfd47fe3f42c0ef9abeaef326a0c0bbdce2838e",
+      "capturedAt": "2026-09-19T06:27:56.789Z"
+    },
+    "fix": {
+      "workspaceFingerprint": "a9500268bf140e4a0b51393941a8933e3d967f3bf88d88c3bb187dfef7a2e964",
+      "artifactFingerprint": "a54dcaea9a3209229513d2978bfd47fe3f42c0ef9abeaef326a0c0bbdce2838e",
+      "capturedAt": "2026-09-19T06:28:15.809Z"
+    },
+    "final-verification": {
+      "workspaceFingerprint": "a9500268bf140e4a0b51393941a8933e3d967f3bf88d88c3bb187dfef7a2e964",
+      "artifactFingerprint": "a54dcaea9a3209229513d2978bfd47fe3f42c0ef9abeaef326a0c0bbdce2838e",
+      "capturedAt": "2026-09-19T06:28:37.621Z"
+    },
+    "build-verification": {
+      "workspaceFingerprint": "a9500268bf140e4a0b51393941a8933e3d967f3bf88d88c3bb187dfef7a2e964",
+      "artifactFingerprint": "a54dcaea9a3209229513d2978bfd47fe3f42c0ef9abeaef326a0c0bbdce2838e",
+      "capturedAt": "2026-09-19T06:28:38.057Z"
+    },
+    "learn": {
+      "workspaceFingerprint": "a9500268bf140e4a0b51393941a8933e3d967f3bf88d88c3bb187dfef7a2e964",
+      "artifactFingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "capturedAt": "2026-09-19T06:28:38.317Z"
+    }
+  },
+  "contextSelections": [
+    {
+      "path": "package.json",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "preferred project entrypoint",
+      "relevanceScore": 0,
+      "approximateSize": 125,
+      "stageId": "run"
+    },
+    {
+      "path": "app.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 0,
+      "approximateSize": 91,
+      "stageId": "run"
+    },
+    {
+      "path": "app.test.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 0,
+      "approximateSize": 183,
+      "stageId": "run"
+    },
+    {
+      "path": "package.json",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "preferred project entrypoint",
+      "relevanceScore": 0,
+      "approximateSize": 125,
+      "stageId": "specify"
+    },
+    {
+      "path": "app.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 0,
+      "approximateSize": 91,
+      "stageId": "specify"
+    },
+    {
+      "path": "app.test.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 0,
+      "approximateSize": 183,
+      "stageId": "specify"
+    },
+    {
+      "path": "package.json",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "preferred project entrypoint",
+      "relevanceScore": 0,
+      "approximateSize": 125,
+      "stageId": "feature-contract"
+    },
+    {
+      "path": "app.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 0,
+      "approximateSize": 91,
+      "stageId": "feature-contract"
+    },
+    {
+      "path": "app.test.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 0,
+      "approximateSize": 183,
+      "stageId": "feature-contract"
+    },
+    {
+      "path": "package.json",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "preferred project entrypoint",
+      "relevanceScore": 0,
+      "approximateSize": 125,
+      "stageId": "plan"
+    },
+    {
+      "path": "app.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 0,
+      "approximateSize": 91,
+      "stageId": "plan"
+    },
+    {
+      "path": "app.test.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 0,
+      "approximateSize": 183,
+      "stageId": "plan"
+    },
+    {
+      "path": "package.json",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "preferred project entrypoint",
+      "relevanceScore": 0,
+      "approximateSize": 125,
+      "stageId": "implement"
+    },
+    {
+      "path": "app.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 0,
+      "approximateSize": 91,
+      "stageId": "implement"
+    },
+    {
+      "path": "app.test.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 0,
+      "approximateSize": 183,
+      "stageId": "implement"
+    },
+    {
+      "path": "package.json",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "preferred project entrypoint",
+      "relevanceScore": 0,
+      "approximateSize": 125,
+      "stageId": "tests"
+    },
+    {
+      "path": "app.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 2,
+      "approximateSize": 188,
+      "stageId": "tests"
+    },
+    {
+      "path": "app.test.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 9,
+      "approximateSize": 465,
+      "stageId": "tests"
+    },
+    {
+      "path": "package.json",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "preferred project entrypoint",
+      "relevanceScore": 0,
+      "approximateSize": 125,
+      "stageId": "code-review"
+    },
+    {
+      "path": "app.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 2,
+      "approximateSize": 188,
+      "stageId": "code-review"
+    },
+    {
+      "path": "app.test.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 9,
+      "approximateSize": 465,
+      "stageId": "code-review"
+    },
+    {
+      "path": "package.json",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "preferred project entrypoint",
+      "relevanceScore": 0,
+      "approximateSize": 125,
+      "stageId": "architecture-review"
+    },
+    {
+      "path": "app.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 2,
+      "approximateSize": 188,
+      "stageId": "architecture-review"
+    },
+    {
+      "path": "app.test.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 9,
+      "approximateSize": 465,
+      "stageId": "architecture-review"
+    },
+    {
+      "path": "package.json",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "preferred project entrypoint",
+      "relevanceScore": 0,
+      "approximateSize": 125,
+      "stageId": "security-review"
+    },
+    {
+      "path": "app.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 2,
+      "approximateSize": 188,
+      "stageId": "security-review"
+    },
+    {
+      "path": "app.test.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 9,
+      "approximateSize": 465,
+      "stageId": "security-review"
+    },
+    {
+      "path": "package.json",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "preferred project entrypoint",
+      "relevanceScore": 0,
+      "approximateSize": 125,
+      "stageId": "ux-review"
+    },
+    {
+      "path": "app.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 2,
+      "approximateSize": 188,
+      "stageId": "ux-review"
+    },
+    {
+      "path": "app.test.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 9,
+      "approximateSize": 465,
+      "stageId": "ux-review"
+    },
+    {
+      "path": "package.json",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "preferred project entrypoint",
+      "relevanceScore": 0,
+      "approximateSize": 125,
+      "stageId": "consolidate"
+    },
+    {
+      "path": "app.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 2,
+      "approximateSize": 188,
+      "stageId": "consolidate"
+    },
+    {
+      "path": "app.test.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 9,
+      "approximateSize": 465,
+      "stageId": "consolidate"
+    },
+    {
+      "path": "package.json",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "preferred project entrypoint",
+      "relevanceScore": 0,
+      "approximateSize": 125,
+      "stageId": "fix"
+    },
+    {
+      "path": "app.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 2,
+      "approximateSize": 188,
+      "stageId": "fix"
+    },
+    {
+      "path": "app.test.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 9,
+      "approximateSize": 465,
+      "stageId": "fix"
+    },
+    {
+      "path": "package.json",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "preferred project entrypoint",
+      "relevanceScore": 0,
+      "approximateSize": 125,
+      "stageId": "final-verification"
+    },
+    {
+      "path": "app.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 2,
+      "approximateSize": 188,
+      "stageId": "final-verification"
+    },
+    {
+      "path": "app.test.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 9,
+      "approximateSize": 465,
+      "stageId": "final-verification"
+    },
+    {
+      "path": "package.json",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "preferred project entrypoint",
+      "relevanceScore": 0,
+      "approximateSize": 125,
+      "stageId": "build-verification"
+    },
+    {
+      "path": "app.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 2,
+      "approximateSize": 188,
+      "stageId": "build-verification"
+    },
+    {
+      "path": "app.test.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 9,
+      "approximateSize": 465,
+      "stageId": "build-verification"
+    },
+    {
+      "path": "package.json",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "preferred project entrypoint",
+      "relevanceScore": 0,
+      "approximateSize": 125,
+      "stageId": "learn"
+    },
+    {
+      "path": "app.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 2,
+      "approximateSize": 188,
+      "stageId": "learn"
+    },
+    {
+      "path": "app.test.js",
+      "source": "repository",
+      "trust": "repository-untrusted",
+      "reason": "bounded repository scan",
+      "relevanceScore": 9,
+      "approximateSize": 465,
+      "stageId": "learn"
+    }
+  ],
+  "knowledgeInfluence": [],
+  "adapterSessions": {
+    "specify": {
+      "adapter": "factory-droid",
+      "sessionId": "342550b4-04e7-43df-bc03-9d4b25b26fb9",
+      "stageId": "specify",
+      "createdAt": "2026-09-19T06:26:24.821Z"
+    },
+    "feature-contract": {
+      "adapter": "factory-droid",
+      "sessionId": "258b7c68-46c6-4cdf-94d1-bd87e8f35ef2",
+      "stageId": "feature-contract",
+      "createdAt": "2026-09-19T06:26:46.098Z"
+    },
+    "plan": {
+      "adapter": "factory-droid",
+      "sessionId": "06f5843c-5cfe-477f-bcc1-1b04bca11c81",
+      "stageId": "plan",
+      "createdAt": "2026-09-19T06:27:15.671Z"
+    },
+    "implement": {
+      "adapter": "factory-droid",
+      "sessionId": "0c63424f-4d53-4c3c-b580-6b28b05ca19d",
+      "stageId": "implement",
+      "createdAt": "2026-09-19T06:27:34.013Z"
+    },
+    "architecture-review": {
+      "adapter": "factory-droid",
+      "sessionId": "fb498a05-dad8-4ea4-87a1-0fb356dba96d",
+      "stageId": "architecture-review",
+      "createdAt": "2026-09-19T06:27:54.211Z"
+    },
+    "code-review": {
+      "adapter": "factory-droid",
+      "sessionId": "eb047717-cdd3-4e5c-99ff-36ff2acac7b6",
+      "stageId": "code-review",
+      "createdAt": "2026-09-19T06:27:55.415Z"
+    },
+    "security-review": {
+      "adapter": "factory-droid",
+      "sessionId": "c2ce9ef2-bc86-4347-bd1c-2c93aac4949d",
+      "stageId": "security-review",
+      "createdAt": "2026-09-19T06:27:56.320Z"
+    },
+    "ux-review": {
+      "adapter": "factory-droid",
+      "sessionId": "d5013f6f-27e7-4989-b756-719ada35e51d",
+      "stageId": "ux-review",
+      "createdAt": "2026-09-19T06:27:56.787Z"
+    },
+    "consolidate": {
+      "adapter": "factory-droid",
+      "sessionId": "8750bbc5-a085-4cdd-ab6f-6c5ba7ff70bb",
+      "stageId": "consolidate",
+      "createdAt": "2026-09-19T06:28:15.807Z"
+    },
+    "fix": {
+      "adapter": "factory-droid",
+      "sessionId": "61d3ce11-f8d4-4299-bcd4-62623f8a2087",
+      "stageId": "fix",
+      "createdAt": "2026-09-19T06:28:37.618Z"
+    },
+    "learn": {
+      "adapter": "factory-droid",
+      "sessionId": "ebb1e337-c5e2-4124-b950-1cf340177715",
+      "stageId": "learn",
+      "createdAt": "2026-09-19T06:29:09.545Z"
+    }
+  },
+  "projectProfile": {
+    "root": "/tmp/hackon-factory-feature-su2Gka",
+    "languages": [
+      "JavaScript"
+    ],
+    "frameworks": [],
+    "packageManager": "npm",
+    "monorepo": false,
+    "commands": {
+      "test": [
+        "npm",
+        "run",
+        "test"
+      ],
+      "build": [
+        "npm",
+        "run",
+        "build"
+      ]
+    },
+    "workingDirectories": [
+      "."
+    ],
+    "detectedFrom": [
+      "package.json"
+    ],
+    "overrides": []
+  }
+}

@@ -21,17 +21,17 @@ npx hackon status
 npx hackon run feature-development --objective "Add a health endpoint"
 ```
 
-The first production adapter is OpenCode. Configure a different executable
-with `HACKON_OPENCODE_COMMAND` or `--adapter-command`; use
-`HACKON_OPENCODE_AUTO_APPROVE=1` only in a repository and environment where
-automatic tool approval is acceptable.
+Factory Droid is the canonical production adapter. Configure it with
+`OPENAI_API_KEY` and optionally `HACKON_DROID_COMMAND` or
+`--adapter-command`. OpenCode remains an explicitly selected compatibility
+adapter with `--adapter opencode`.
 
 ## Project map
 
 - `src/domain.ts`: contracts for workflows, evidence, gates, and state.
 - `src/orchestrator.ts`: resumable DAG execution and review/fix loops.
 - `src/tool-runner.ts`: shell-free, bounded command execution.
-- `src/adapters.ts`: OpenCode and future adapter boundary.
+- `src/adapters.ts`: Factory Droid production adapter and OpenCode compatibility adapter.
 - `src/workflows.ts`: built-in startup workflows.
 - `skills/`: methodology-rich, host-neutral skills.
 - `docs/`: architecture, research, security, and evidence documentation.
@@ -39,6 +39,6 @@ automatic tool approval is acceptable.
 See `docs/BUILD_STATUS.md` for evidence-based status. This rebuild does not
 publish automatically.
 
-Ordinary CI does not silently ignore live-agent failures. Real OpenCode E2E is
-a separate manual workflow job and fails explicitly when OpenCode or provider
-credentials are unavailable.
+Ordinary CI does not silently ignore live-agent failures. Real Factory Droid
+E2E is a separate manual workflow job and fails explicitly when Droid or
+`OPENAI_API_KEY` is unavailable.

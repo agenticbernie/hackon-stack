@@ -8,8 +8,8 @@ HackOn has six separable layers:
    never count as evidence by themselves.
 3. **Orchestrator** acquires bounded context, executes ready stages, persists
    checkpoints, resumes incomplete stages, and propagates failure.
-4. **Adapters** translate an agent task into a host action. OpenCode is the
-   first real adapter; the interface supports Codex and Claude Code later.
+4. **Adapters** translate an agent task into a host action. Factory Droid is
+   the production adapter; OpenCode is a compatibility adapter.
 5. **Tools** execute controlled argv vectors without a shell and return command
    provenance.
 6. **Evidence and gates** decide whether a stage can complete.

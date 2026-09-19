@@ -1,15 +1,39 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { Evidence, StageDefinition, StageContext, WorkflowDefinition } from "./domain.js";
+import type { Evidence, ReviewResult, StageDefinition, StageContext, WorkflowDefinition } from "./domain.js";
 import { evidence } from "./domain.js";
 import { agentEvidence, captureStageBaseline } from "./orchestrator.js";
 
-function reviewDecision(output: string, ok: boolean): { blockerCount: number; approved: boolean } {
-  const tail = output.slice(-8_000);
-  const explicitCount = tail.match(/BLOCKER_COUNT\s*:\s*(\d+)/i);
-  const noBlockers = /(?:NO\s+(?:BLOCKER|BLOCKING)\s+FINDINGS?|NONE\s+AT\s+BLOCKER|FINDINGS\s*:\s*NONE\s+AT\s+BLOCKER)/i.test(tail);
-  const blockerCount = explicitCount ? Number(explicitCount[1]) : noBlockers ? 0 : /\bBLOCKER\b/i.test(tail) ? 1 : 0;
-  return { blockerCount, approved: ok && blockerCount === 0 && /APPROVED/i.test(tail) };
+function reviewDecision(output: string, ok: boolean): { blockerCount: number; approved: boolean; review?: ReviewResult; validSchema: boolean } {
+  if (!ok) return { blockerCount: 0, approved: false, validSchema: false };
+  const start = output.indexOf("{");
+  const end = output.lastIndexOf("}");
+  if (start < 0 || end <= start) return { blockerCount: 0, approved: false, validSchema: false };
+  try {
+    const value = JSON.parse(output.slice(start, end + 1)) as Partial<ReviewResult>;
+    if (typeof value.approved !== "boolean" || typeof value.summary !== "string" || !Array.isArray(value.findings)) {
+      return { blockerCount: 0, approved: false, validSchema: false };
+    }
+    const findings = value.findings.filter((finding) => {
+      if (!finding || typeof finding !== "object") return false;
+      const candidate = finding as Partial<ReviewResult["findings"][number]>;
+      return typeof candidate.id === "string" &&
+        ["BLOCKER", "MAJOR", "MINOR", "NOTE"].includes(String(candidate.severity)) &&
+        typeof candidate.category === "string" &&
+        typeof candidate.finding === "string" &&
+        typeof candidate.evidence === "string" &&
+        typeof candidate.recommendedFix === "string" &&
+        (candidate.file === undefined || typeof candidate.file === "string") &&
+        (candidate.line === undefined || typeof candidate.line === "number") &&
+        (candidate.status === undefined || ["open", "fixed", "invalidated", "accepted-risk"].includes(candidate.status));
+    });
+    const review = { approved: value.approved, summary: value.summary, findings } as ReviewResult;
+    const blockerCount = findings.filter((finding) => finding.severity === "BLOCKER" && finding.status !== "invalidated" && finding.status !== "fixed").length;
+    const validSchema = findings.length === value.findings.length;
+    return { blockerCount, approved: value.approved && blockerCount === 0 && validSchema, review, validSchema };
+  } catch {
+    return { blockerCount: 0, approved: false, validSchema: false };
+  }
 }
 
 async function findArtifact(workspace: string, pattern: RegExp): Promise<string | undefined> {
@@ -59,35 +83,64 @@ async function askAgent(context: StageContext, prompt: string, role: string, per
     permissions,
     context: context.context,
   });
+  recordSession(context, result.sessionId);
   return agentEvidence(context.stage.id, result.source, result.output, result.ok, {
     agentSucceeded: result.ok,
     error: result.error,
+    sessionId: result.sessionId,
+    adapterMetadata: result.metadata,
   });
 }
 
-async function runNpm(context: StageContext, command: string, kind: Evidence["kind"]): Promise<Evidence> {
-  const result = await context.tools.run({ argv: ["npm", ...command.split(" ")], cwd: context.run.workspace });
+function recordSession(context: StageContext, sessionId: string | undefined): void {
+  if (!sessionId) return;
+  context.run.adapterSessions ??= {};
+  context.run.adapterSessions[context.stage.id] = {
+    adapter: context.adapter.id,
+    sessionId,
+    stageId: context.stage.id,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+async function runProjectCommand(context: StageContext, intent: "test" | "build" | "lint" | "typecheck" | "security", kind: Evidence["kind"]): Promise<Evidence> {
+  const argv = context.run.projectProfile?.commands[intent];
+  if (!argv) {
+    return evidence({
+      kind,
+      producer: "hackon-project-profile",
+      stageId: context.stage.id,
+      source: `profile.commands.${intent}`,
+      result: "fail",
+      verification: "verified",
+      metadata: { available: false, intent, projectProfile: context.run.projectProfile },
+    });
+  }
+  const result = await context.tools.run({ argv, cwd: context.run.workspace, permissions: ["read", "execute"] });
   return commandEvidence(context.stage.id, kind, result);
 }
 
 function agentStage(id: string, title: string, dependsOn: string[], role: string, prompt: string, writes: boolean, permissions: StageDefinition["permissions"], gates: StageDefinition["gates"] = []): StageDefinition {
+  const agentGates: StageDefinition["gates"] = [
+    { id: `${id}-agent-succeeded`, type: "agent_succeeded", blocking: true, description: "Agent execution completed successfully" },
+    ...gates,
+  ];
   return {
     id,
     title,
     dependsOn,
     writes,
     permissions,
-    gates,
+    gates: agentGates,
     retry: { maxAttempts: 2, backoffMs: 250 },
     async execute(context) {
       const item = await askAgent(context, prompt, role, permissions);
-      if (item.metadata.agentSucceeded !== true) throw new Error(`Agent failed in ${id}`);
       return [item];
     },
   };
 }
 
-function commandStage(id: string, title: string, dependsOn: string[], command: string, kind: Evidence["kind"], gates: StageDefinition["gates"]): StageDefinition {
+function commandStage(id: string, title: string, dependsOn: string[], intent: "test" | "build" | "lint" | "typecheck" | "security", kind: Evidence["kind"], gates: StageDefinition["gates"]): StageDefinition {
   return {
     id,
     title,
@@ -96,7 +149,7 @@ function commandStage(id: string, title: string, dependsOn: string[], command: s
     permissions: ["read", "execute"],
     gates,
     async execute(context) {
-      return [await runNpm(context, command, kind)];
+      return [await runProjectCommand(context, intent, kind)];
     },
   };
 }
@@ -117,12 +170,13 @@ function reviewStage(id: string, role: string, focus: string): StageDefinition {
         objective: context.run.objective,
         stageId: id,
         role,
-        prompt: `Review the current diff and relevant tests for ${focus}. Do not modify files. Identify concrete findings with severity BLOCKER, MAJOR, MINOR, or NOTE. End with exactly one line: APPROVED or BLOCKER_COUNT: <number>.`,
+        prompt: `Review the current diff and relevant test files for ${focus}. Do not modify files and do not run tests, builds, package managers, or other commands that require write-enabled autonomy; use the recorded command evidence instead. Return only valid JSON matching {"approved":boolean,"summary":string,"findings":[{"id":string,"severity":"BLOCKER"|"MAJOR"|"MINOR"|"NOTE","category":string,"file":string,"line":number,"finding":string,"evidence":string,"recommendedFix":string,"status":"open"|"fixed"|"invalidated"|"accepted-risk"}]}. Do not use markdown fences. A review is approved only when no open BLOCKER findings remain.`,
         workspace: context.run.workspace,
         permissions: ["read"],
         context: context.context,
       });
-      const { blockerCount, approved } = reviewDecision(result.output, result.ok);
+      recordSession(context, result.sessionId);
+      const { blockerCount, approved, validSchema, review } = reviewDecision(result.output, result.ok);
       return [evidence({
         kind: "ReviewEvidence",
         producer: result.source,
@@ -130,7 +184,7 @@ function reviewStage(id: string, role: string, focus: string): StageDefinition {
         source: result.source,
         result: approved ? "pass" : "fail",
         verification: result.ok ? "verified" : "unverified",
-        metadata: { output: result.output.slice(-20_000), blockerCount, approved, agentSucceeded: result.ok },
+        metadata: { output: result.output.slice(-20_000), blockerCount, approved, validSchema, review, agentSucceeded: result.ok, sessionId: result.sessionId, adapterMetadata: result.metadata },
       })];
     },
   };
@@ -156,7 +210,6 @@ function standardStages(): StageDefinition[] {
         const agent = await askAgent(context,
           "Implement the requested change in the repository. Use test-driven development where practical: add or update a regression or acceptance test, implement the smallest root-cause solution, and preserve security boundaries. Do not merely describe code.",
           "implementation engineer", ["read", "write", "execute"]);
-        if (agent.metadata.agentSucceeded !== true) throw new Error("Implementation agent failed");
         const status = await context.tools.run({ argv: ["git", "status", "--short"], cwd: context.run.workspace });
         const after = await captureStageBaseline(context.run.workspace, context.stage.id);
         const baseline = context.run.stageBaselines[context.stage.id];
@@ -181,7 +234,7 @@ function standardStages(): StageDefinition[] {
     reviewStage("ux-review", "product/UX", "user-facing behavior, acceptance criteria, accessibility, and confusing edge cases"),
     {
       ...agentStage("consolidate", "Consolidate review", ["code-review", "security-review", "architecture-review", "ux-review"], "review lead",
-        "Read all review evidence and the diff. Consolidate duplicate findings, rank them by severity and exploitability, and state which findings must be fixed before release. End with APPROVED or BLOCKER_COUNT: <number>.",
+        "Read all review evidence and the diff. Consolidate duplicate findings, rank them by severity and exploitability, and return only valid JSON matching {\"approved\":boolean,\"summary\":string,\"findings\":[{\"id\":string,\"severity\":\"BLOCKER\"|\"MAJOR\"|\"MINOR\"|\"NOTE\",\"category\":string,\"file\":string,\"line\":number,\"finding\":string,\"evidence\":string,\"recommendedFix\":string,\"status\":\"open\"|\"fixed\"|\"invalidated\"|\"accepted-risk\"}]}. Do not use markdown fences.",
         false, ["read"], [
           { id: "review-decision", type: "review_approved", blocking: true, description: "Consolidated review has no blocking findings" },
           { id: "review-no-blockers", type: "no_blocker_findings", blocking: false, description: "All independent reviews have no blockers" },
@@ -194,15 +247,21 @@ function standardStages(): StageDefinition[] {
           objective: context.run.objective, stageId: "consolidate", role: "review lead",
           prompt: `Read the current diff and consolidate these independently recorded review results:
 ${JSON.stringify(independentReviews, null, 2)}
-Treat the recorded reviewer metadata as evidence, inspect the diff for anything they missed, rank findings by severity and exploitability, state which findings must be fixed before release, and end with exactly APPROVED or BLOCKER_COUNT: 0 (or the actual number).`,
+Treat the recorded reviewer metadata as evidence, inspect the diff for anything they missed, rank findings by severity and exploitability, and return only the same validated JSON review schema. Do not use markdown fences.`,
           workspace: context.run.workspace, permissions: ["read"], context: context.context,
         });
-        const { blockerCount, approved } = reviewDecision(result.output, result.ok);
-        return [evidence({
+        recordSession(context, result.sessionId);
+        const { blockerCount, approved, validSchema, review } = reviewDecision(result.output, result.ok);
+        const agent = agentEvidence(context.stage.id, result.source, result.output, result.ok, {
+          agentSucceeded: result.ok,
+          sessionId: result.sessionId,
+          adapterMetadata: result.metadata,
+        });
+        return [agent, evidence({
           kind: "ReviewEvidence", producer: result.source, stageId: context.stage.id, source: result.source,
           result: approved ? "pass" : "fail",
           verification: result.ok ? "verified" : "unverified",
-          metadata: { output: result.output.slice(-20_000), blockerCount, approved },
+          metadata: { output: result.output.slice(-20_000), blockerCount, approved, validSchema, review, sessionId: result.sessionId, adapterMetadata: result.metadata },
         })];
       },
     },
@@ -214,7 +273,7 @@ Treat the recorded reviewer metadata as evidence, inspect the diff for anything 
     commandStage("final-verification", "Final verification", ["fix"], "test", "TestEvidence", [
       { id: "final-tests-pass", type: "tests_pass", blocking: true, description: "Final tests exit successfully" },
     ]),
-    commandStage("build-verification", "Build verification", ["final-verification"], "run build", "BuildEvidence", [
+    commandStage("build-verification", "Build verification", ["final-verification"], "build", "BuildEvidence", [
       { id: "build-pass", type: "build_pass", blocking: true, description: "Production build exits successfully" },
     ]),
     {
@@ -227,7 +286,6 @@ Treat the recorded reviewer metadata as evidence, inspect the diff for anything 
         const item = await askAgent(context,
           "Write a durable retrospective in .hackon/learning. Record decision quality, failures, successful patterns, unresolved uncertainty, and a concrete retrieval cue for future cycles. Do not claim metrics that were not measured.",
           "learning facilitator", ["read", "write"]);
-        if (item.metadata.agentSucceeded !== true) throw new Error("Learning agent failed");
         const artifact = await findArtifact(join(context.run.workspace, ".hackon", "learning"), /.+/);
         const after = await captureStageBaseline(context.run.workspace, context.stage.id);
         const baseline = context.run.stageBaselines[context.stage.id];
@@ -261,21 +319,34 @@ const workflowDescriptions: Record<string, { name: string; description: string; 
   "weekly-founder-review": { name: "Weekly Founder Review", description: "Review product, engineering, growth, business, and learning signals.", prefix: "Review leading and lagging indicators, decisions, risks, and the next compounding action." },
 };
 
+const specializations: Record<string, { id: string; title: string; role: string; prompt: string }> = {
+  "idea-to-product": { id: "customer-discovery", title: "Customer discovery", role: "customer researcher", prompt: "Map the target user, job to be done, alternatives, riskiest assumptions, and the smallest discovery evidence needed before building." },
+  "zero-to-mvp": { id: "mvp-scope", title: "MVP scope", role: "MVP product strategist", prompt: "Define the thin vertical slice, explicit non-goals, acceptance tests, and launch constraint that make this MVP learnable rather than merely small." },
+  "feature-development": { id: "feature-contract", title: "Feature contract", role: "feature systems designer", prompt: "Turn the feature request into user-visible behavior, API/data contracts, compatibility risks, and regression scenarios." },
+  "bug-fix": { id: "root-cause", title: "Root-cause investigation", role: "debugging investigator", prompt: "Trace the failure from observed symptom to root cause, identify a minimal reproducer, and define a regression test before proposing a fix." },
+  "production-incident": { id: "incident-command", title: "Incident command", role: "incident commander", prompt: "Establish impact, timeline, containment, communication, rollback, and follow-up actions. Do not trade away evidence preservation for speed." },
+  "product-improvement": { id: "product-signal", title: "Product signal analysis", role: "product analyst", prompt: "Connect the requested improvement to a measurable user outcome, baseline, counterfactual, and decision rule." },
+  "growth-experiment": { id: "experiment-design", title: "Experiment design", role: "growth scientist", prompt: "Define the growth hypothesis, funnel event, baseline, sample or observation plan, guardrails, and stop/ship criteria." },
+  "launch": { id: "launch-readiness", title: "Launch readiness", role: "launch manager", prompt: "Build a launch checklist covering audience, positioning, operational readiness, support, rollback, instrumentation, and post-launch review." },
+  "pivot": { id: "pivot-evidence", title: "Pivot evidence", role: "strategy lead", prompt: "Separate signal from noise, compare strategic options, state the falsifying evidence, and protect reversible experiments." },
+  "technical-debt": { id: "debt-risk", title: "Debt risk assessment", role: "staff engineer", prompt: "Characterize the debt's failure modes, interest cost, behavior-preserving constraints, migration seams, and measurable risk reduction." },
+  "customer-request": { id: "request-triage", title: "Request triage", role: "customer advocate", prompt: "Translate the literal request into the underlying job, affected segment, frequency, workaround, willingness-to-pay signal, and scope decision." },
+  "weekly-founder-review": { id: "founder-scorecard", title: "Founder scorecard", role: "founder operating partner", prompt: "Review leading and lagging signals across product, engineering, growth, business, and learning, then select one compounding action with an owner and decision date." },
+};
+
 export function builtInWorkflows(): Map<string, WorkflowDefinition> {
-  return new Map(Object.entries(workflowDescriptions).map(([id, details]) => [id, {
-    id,
-    name: details.name,
-    description: details.description,
-    stages: standardStages().map((stage) => stage.id === "specify"
-      ? { ...stage, execute: async (context) => {
+  return new Map(Object.entries(workflowDescriptions).map(([id, details]) => {
+    const specialization = specializations[id];
+    const baseStages = standardStages().map((stage) => stage.id === "specify"
+      ? { ...stage, execute: async (context: StageContext) => {
         const adjusted = `${details.prefix}\n\n${context.run.objective}`;
         const result = await context.adapter.run({
           objective: adjusted, stageId: context.stage.id, role: "product discovery",
           prompt: "Perform the methodology in the stage instructions and save the specification.",
           workspace: context.run.workspace, permissions: context.stage.permissions, context: context.context,
         });
-        const item = agentEvidence(context.stage.id, result.source, result.output, result.ok, { agentSucceeded: result.ok });
-        if (!result.ok) throw new Error(result.error ?? "specification agent failed");
+        recordSession(context, result.sessionId);
+        const item = agentEvidence(context.stage.id, result.source, result.output, result.ok, { agentSucceeded: result.ok, sessionId: result.sessionId, adapterMetadata: result.metadata });
         const artifact = await findArtifact(context.run.workspace, /spec|prd|brief/i);
         const after = await captureStageBaseline(context.run.workspace, context.stage.id);
         const baseline = context.run.stageBaselines[context.stage.id];
@@ -285,6 +356,26 @@ export function builtInWorkflows(): Map<string, WorkflowDefinition> {
           result: createdThisStage ? "pass" : "fail", verification: "verified",
           metadata: { exists: createdThisStage, path: artifact, schemaValid: createdThisStage, createdThisStage, baseline, after },
         })];
-      } } : stage),
-  }]));
+      } } : stage);
+    const domainStage = agentStage(specialization.id, specialization.title, ["specify"], specialization.role, specialization.prompt, false, ["read"], [
+      { id: `${specialization.id}-agent`, type: "agent_succeeded", blocking: true, description: "Specialized domain analysis completed successfully" },
+    ]);
+    return [id, {
+    id,
+    name: details.name,
+    description: details.description,
+    stages: [
+      baseStages[0],
+      domainStage,
+      ...baseStages.slice(1).map((stage) => stage.id === "plan" ? {
+        ...stage,
+        dependsOn: [specialization.id],
+        execute: async (context: StageContext) => {
+          const item = await askAgent(context, `${specialization.prompt}\n\nNow produce the concrete implementation plan with files, tests, risks, rollback, and commands. Save it as a repository document.`, "technical planner", context.stage.permissions);
+          return [item];
+        },
+      } : stage),
+    ],
+  } satisfies WorkflowDefinition];
+}));
 }

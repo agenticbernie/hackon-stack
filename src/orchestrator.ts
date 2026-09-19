@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
-import { readdir, stat } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { AgentAdapter, ContextBundle, Evidence, KnowledgeStore, RunState, StageContext, StateStore, ToolExecutor, WorkflowDefinition } from "./domain.js";
 import { evidence, initialRun } from "./domain.js";
 import { acquireContext } from "./context.js";
 import { evaluateGates } from "./gates.js";
+import { detectProjectProfile } from "./project-profile.js";
+import { RunLock } from "./run-lock.js";
+import { createRunWorktree } from "./worktree.js";
 
 export type OrchestratorOptions = {
   tools: ToolExecutor;
@@ -30,8 +33,8 @@ async function fileMetadata(root: string, current: string, output: string[], dep
       await fileMetadata(root, path, output, depth + 1);
     } else {
       try {
-        const info = await stat(path);
-        output.push(`${relative(root, path)}:${info.size}:${info.mtimeMs}`);
+        const content = await readFile(path);
+        output.push(`${relative(root, path)}:${createHash("sha256").update(content).digest("hex")}`);
       } catch {
         // A concurrent agent may remove a file between directory listing and stat.
       }
@@ -56,8 +59,8 @@ async function artifactMetadata(workspace: string, stageId: string): Promise<str
       const path = join(current, entry.name);
       if (entry.isDirectory()) await visit(path, depth + 1);
       else if (stageId === "learn" ? current.includes(`${".hackon"}${"/learning"}`) : patterns.some((pattern) => pattern.test(entry.name))) {
-        const info = await stat(path).catch(() => undefined);
-        if (info) output.push(`${relative(workspace, path)}:${info.size}:${info.mtimeMs}`);
+        const content = await readFile(path).catch(() => undefined);
+        if (content) output.push(`${relative(workspace, path)}:${createHash("sha256").update(content).digest("hex")}`);
       }
     }
   };
@@ -79,64 +82,75 @@ export async function captureStageBaseline(workspace: string, stageId: string): 
 export class Orchestrator {
   constructor(private readonly options: OrchestratorOptions) {}
 
-  async run(workflow: WorkflowDefinition, objective: string, workspace: string, resumeId?: string): Promise<RunState> {
+  async run(workflow: WorkflowDefinition, objective: string, workspace: string, resumeId?: string, options: { worktree?: string } = {}): Promise<RunState> {
     const run = resumeId ? await this.options.state.load(resumeId) : undefined;
     if (resumeId && !run) throw new Error(`Run not found: ${resumeId}`);
     const current = run ?? initialRun(workflow, objective, workspace);
-    current.stageBaselines ??= {};
-    if (run) {
-      for (const stage of Object.values(current.stages)) {
-        if (stage.status === "running" || stage.status === "failed" || stage.status === "blocked") {
-          stage.status = "pending";
-          delete stage.error;
-        }
-      }
-      current.status = "running";
-      current.error = undefined;
-    }
-    const context = await acquireContext(workspace, current.objective, this.options.knowledge);
-    current.selectedContext = [...context.files.map((file) => file.path), ...context.knowledge.map((item) => `knowledge:${item.id}`)];
-    await this.options.state.save(current);
-    this.emit({ type: "context.selected", runId: current.id, message: `${current.selectedContext.length} context items selected` });
-
+    const lock = await RunLock.acquire(workspace, current.id);
     try {
-      while (Object.values(current.stages).some((stage) => stage.status === "pending" || stage.status === "running")) {
-        const ready = workflow.stages.filter((stage) =>
-          current.stages[stage.id].status === "pending" &&
-          stage.dependsOn.every((dependency) => current.stages[dependency].status === "succeeded"));
-        const blocked = workflow.stages.filter((stage) =>
-          current.stages[stage.id].status === "pending" &&
-          stage.dependsOn.some((dependency) => ["failed", "blocked", "cancelled"].includes(current.stages[dependency].status)));
-        for (const stage of blocked) {
-          current.stages[stage.id] = { ...current.stages[stage.id], status: "blocked", error: "Dependency failed" };
-        }
-        if (blocked.length) await this.options.state.save(current);
-        if (ready.length === 0) {
-          if (Object.values(current.stages).some((stage) => stage.status === "pending")) throw new Error("Workflow graph is invalid or contains an unresolved dependency");
-          break;
-        }
-        const parallel = ready.filter((stage) => !stage.writes);
-        const batch = parallel.length > 0 ? parallel : [ready[0]];
-        const results = await Promise.allSettled(batch.map((stage) => this.executeStage(current, workflow, stage, context)));
-        const rejected = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
-        if (rejected) throw rejected.reason;
+      if (!run && options.worktree) {
+        current.worktreePath = await createRunWorktree(workspace, current.id, options.worktree);
+        current.workspace = current.worktreePath;
       }
-      current.status = Object.values(current.stages).every((stage) => stage.status === "succeeded") ? "succeeded" : "failed";
-    } catch (error) {
-      current.status = "failed";
-      current.error = error instanceof Error ? error.message : String(error);
+      current.stageBaselines ??= {};
+      current.projectProfile ??= await detectProjectProfile(current.workspace);
+      if (run) {
+        for (const stage of Object.values(current.stages)) {
+          if (stage.status === "running" || stage.status === "failed" || stage.status === "blocked") {
+            stage.status = "pending";
+            delete stage.error;
+          }
+        }
+        current.status = "running";
+        current.error = undefined;
+      }
+      const context = await acquireContext(current.workspace, current.objective, this.options.knowledge, { stageId: "run", role: workflow.name, profile: current.projectProfile });
+      current.contextSelections = [...(current.contextSelections ?? []), ...(context.selections ?? [])];
+      current.selectedContext = [...context.files.map((file) => file.path), ...context.knowledge.map((item) => `knowledge:${item.id}`)];
+      await this.options.state.save(current);
+      this.emit({ type: "context.selected", runId: current.id, message: `${current.selectedContext.length} context items selected` });
+
+      try {
+        while (Object.values(current.stages).some((stage) => stage.status === "pending" || stage.status === "running")) {
+          const ready = workflow.stages.filter((stage) =>
+            current.stages[stage.id].status === "pending" &&
+            stage.dependsOn.every((dependency) => current.stages[dependency].status === "succeeded"));
+          const blocked = workflow.stages.filter((stage) =>
+            current.stages[stage.id].status === "pending" &&
+            stage.dependsOn.some((dependency) => ["failed", "blocked", "cancelled"].includes(current.stages[dependency].status)));
+          for (const stage of blocked) {
+            current.stages[stage.id] = { ...current.stages[stage.id], status: "blocked", error: "Dependency failed" };
+          }
+          if (blocked.length) await this.options.state.save(current);
+          if (ready.length === 0) {
+            if (Object.values(current.stages).some((stage) => stage.status === "pending")) throw new Error("Workflow graph is invalid or contains an unresolved dependency");
+            break;
+          }
+          const parallel = ready.filter((stage) => !stage.writes);
+          const batch = parallel.length > 0 ? parallel : [ready[0]];
+          const results = await Promise.allSettled(batch.map((stage) => this.executeStage(current, workflow, stage, context)));
+          const rejected = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+          if (rejected) throw rejected.reason;
+        }
+        current.status = Object.values(current.stages).every((stage) => stage.status === "succeeded") ? "succeeded" : "failed";
+      } catch (error) {
+        current.status = "failed";
+        current.error = error instanceof Error ? error.message : String(error);
+      }
+      current.updatedAt = new Date().toISOString();
+      await this.options.state.save(current);
+      if (current.status === "succeeded") {
+        await this.options.knowledge.save({
+          title: `${workflow.name}: completed cycle`,
+          content: `Objective: ${objective}\nEvidence: ${current.evidence.filter((item) => item.verification === "verified").length} verified items.\nStages: ${Object.keys(current.stages).join(", ")}.`,
+          tags: [workflow.id, "cycle", "verified"],
+          sourceRunId: current.id,
+        });
+      }
+      return current;
+    } finally {
+      await lock.release();
     }
-    current.updatedAt = new Date().toISOString();
-    await this.options.state.save(current);
-    if (current.status === "succeeded") {
-      await this.options.knowledge.save({
-        title: `${workflow.name}: completed cycle`,
-        content: `Objective: ${objective}\nEvidence: ${current.evidence.filter((item) => item.verification === "verified").length} verified items.\nStages: ${Object.keys(current.stages).join(", ")}.`,
-        tags: [workflow.id, "cycle", "verified"],
-        sourceRunId: current.id,
-      });
-    }
-    return current;
   }
 
   private async executeStage(run: RunState, workflow: WorkflowDefinition, stage: WorkflowDefinition["stages"][number], context: ContextBundle): Promise<void> {
@@ -157,9 +171,25 @@ export class Orchestrator {
           workflow,
           tools: this.options.tools,
           adapter: this.options.adapter,
-          context,
+          context: await acquireContext(run.workspace, run.objective, this.options.knowledge, {
+            stageId: stage.id,
+            role: stage.title,
+            profile: run.projectProfile,
+          }),
           knowledge: this.options.knowledge,
         };
+        run.contextSelections = [...(run.contextSelections ?? []), ...(stageContext.context.selections ?? [])];
+        run.knowledgeInfluence = [
+          ...(run.knowledgeInfluence ?? []),
+          ...stageContext.context.knowledge.map((item) => ({
+            knowledgeId: item.id,
+            stageId: stage.id,
+            selectionReason: `retrieved score ${item.score} for ${stage.title}`,
+            influence: "Provided to the stage agent as prior learning; stage output remains subject to independent evidence gates.",
+            recordedAt: new Date().toISOString(),
+          })),
+        ];
+        await this.options.state.save(run);
         const results = await stage.execute(stageContext);
         run.evidence.push(...results);
         const gateResults = evaluateGates(stage.gates, run, stage.id);
@@ -198,6 +228,7 @@ export function agentEvidence(stageId: string, adapterId: string, output: string
     stageId,
     source: adapterId,
     result: ok ? "pass" : "fail",
+    verification: ok ? "verified" : "unverified",
     metadata: { output: output.slice(-20_000), ...metadata },
   });
 }

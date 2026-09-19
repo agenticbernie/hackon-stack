@@ -6,3 +6,6 @@ export * from "./tool-runner.js";
 export * from "./adapters.js";
 export * from "./orchestrator.js";
 export * from "./workflows.js";
+export * from "./project-profile.js";
+export * from "./run-lock.js";
+export * from "./worktree.js";

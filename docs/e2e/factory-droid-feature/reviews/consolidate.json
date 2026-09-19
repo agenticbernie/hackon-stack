@@ -1,0 +1,43 @@
+{
+  "stageId": "consolidate",
+  "result": "pass",
+  "verification": "verified",
+  "metadata": {
+    "output": "{\"approved\":true,\"summary\":\"Approved. Inspected app.js and app.test.js plus the current diff. reverseWords correctly reverses whitespace-separated words, returns an empty string for empty input, and normalizes multiple spaces. Files changed: app.js, app.test.js. Commands run: git diff --check, git diff, git status. Remaining risk: tests and build were not run under read-only permissions.\",\"findings\":[]}",
+    "blockerCount": 0,
+    "approved": true,
+    "validSchema": true,
+    "review": {
+      "approved": true,
+      "summary": "Approved. Inspected app.js and app.test.js plus the current diff. reverseWords correctly reverses whitespace-separated words, returns an empty string for empty input, and normalizes multiple spaces. Files changed: app.js, app.test.js. Commands run: git diff --check, git diff, git status. Remaining risk: tests and build were not run under read-only permissions.",
+      "findings": []
+    },
+    "sessionId": "8750bbc5-a085-4cdd-ab6f-6c5ba7ff70bb",
+    "adapterMetadata": {
+      "adapter": "factory-droid",
+      "autonomy": "default",
+      "toolRestrictions": [
+        "Read",
+        "Grep",
+        "Glob",
+        "LS",
+        "Execute"
+      ],
+      "workspace": "/tmp/hackon-factory-feature-su2Gka",
+      "structuredOutput": true,
+      "usage": {
+        "input_tokens": 12343,
+        "output_tokens": 620,
+        "cache_read_input_tokens": 11298,
+        "cache_creation_input_tokens": 0,
+        "factory_credits": 13756,
+        "thinking_tokens": 319,
+        "ttft_ms": 1039
+      },
+      "cliVersion": "0.222.0",
+      "exitCode": 0,
+      "readOnlyViolation": false,
+      "timedOut": false
+    }
+  }
+}
